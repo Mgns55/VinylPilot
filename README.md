@@ -41,7 +41,7 @@ Details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 
 | Device | Status |
 |---|---|
-| Sony PS-HX500 | ⏳ not yet verified |
+| Sony PS-HX500 | ✅ USB capture verified on Pi 5 (16/24/32-bit, 44.1–352.8 kHz) |
 
 ## License
 

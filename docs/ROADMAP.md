@@ -3,12 +3,12 @@
 Legend: ✅ done · ⏳ in progress · ☐ open
 
 ## Phase 1 – Hardware validation (Raspberry Pi 5) ⏳
-- ☐ USB enumeration of the Sony PS-HX500 (`lsusb`, `dmesg`)
-- ☐ ALSA capture device available (`arecord -l`)
-- ☐ Supported sample rates / bit depths (`/proc/asound/cardN/stream0`)
+- ✅ USB enumeration of the Sony PS-HX500 (`lsusb`, `dmesg`)
+- ✅ ALSA capture device available (`arecord -l`)
+- ✅ Supported sample rates / bit depths (`/proc/asound/cardN/stream0`)
 - ☐ 30 s recording with a record playing, plus 10 s needle-up noise floor (`sox stats`)
-- ☐ Playback check of the recording
-- ☐ Python ≥ 3.12 available
+- ✅ Playback check of the recording
+- ✅ Python ≥ 3.12 available
 
 See [hardware-validation.md](hardware-validation.md).
 
@@ -40,6 +40,4 @@ See [hardware-validation.md](hardware-validation.md).
 - ☐ README, troubleshooting guide
 
 ## Open questions
-- Does the PS-HX500 enumerate as a class-compliant USB audio device under Linux?
-- Which rates/bit depths does it expose over USB?
 - RAM footprint of aiosendspin with PyAV on the Zero 2 W?
