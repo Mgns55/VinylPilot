@@ -77,7 +77,10 @@ async def run(args: argparse.Namespace) -> None:
             if detector.update(meter.window_rms_db, capture.chunk_s):
                 logger.info("Record %s", "playing" if detector.present else "stopped")
                 await source.set_signal(detector.present)
-            await source.feed(pcm, ts)
+            try:
+                await source.feed(pcm, ts)
+            except Exception:  # noqa: BLE001 - capture and detection keep running
+                logger.exception("Unexpected error while streaming; continuing")
             if args.show_levels and loop.time() - last_report >= 1.0:
                 last_report = loop.time()
                 logger.info(

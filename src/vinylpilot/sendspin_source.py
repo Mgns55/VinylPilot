@@ -183,6 +183,9 @@ class SendspinSource:
         except RuntimeError as err:
             logger.debug("Signal not sent yet: %s", err)
             return
+        except Exception as err:  # noqa: BLE001 - a dropped socket must never stop capture
+            logger.warning("Could not report signal (%s: %s)", type(err).__name__, err)
+            return
         self._signal_conn = conn
         logger.info("Reported signal %s", "present" if self.signal_present else "absent")
 
@@ -211,6 +214,9 @@ class SendspinSource:
             except RuntimeError as err:
                 logger.debug("Cannot start stream yet: %s", err)
                 return
+            except Exception as err:  # noqa: BLE001
+                logger.warning("Could not start stream (%s: %s)", type(err).__name__, err)
+                return
             self._capture = capture
             self._capture_conn = conn
             fmt = capture.audio_format
@@ -224,6 +230,9 @@ class SendspinSource:
                 await self._capture.feed(pcm, capture_timestamp_us)
             except RuntimeError as err:
                 logger.info("Stream ended: %s", err)
+                self._capture = None
+            except Exception as err:  # noqa: BLE001
+                logger.warning("Stream interrupted (%s: %s)", type(err).__name__, err)
                 self._capture = None
 
     def now_us(self) -> int | None:

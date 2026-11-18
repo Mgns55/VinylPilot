@@ -101,6 +101,12 @@ async def test_source_pairs_streams_and_reports_signal(tmp_path):
         assert any(
             isinstance(e, SourceSignalChangedEvent) and e.signal is SignalState.PRESENT for e in events
         )
+
+        # Abrupt server loss mid-stream must not end VinylPilot.
+        await ts.close()
+        await server.close()
+        await asyncio.sleep(1.5)
+        assert not pump_task.done(), pump_task.exception() if pump_task.done() else None
         pump_task.cancel()
     finally:
         await source.stop()
