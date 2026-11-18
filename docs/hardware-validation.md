@@ -42,11 +42,19 @@ sox ~/vinyl-silence.wav -n stats
 | Channels | 2 (FL FR) |
 | Endpoint | 0x83 IN, **asynchronous** (device-clocked) |
 | Recording / playback | ✅ 48 kHz / 16-bit recording plays back cleanly |
-| Peak / RMS (playing) | pending |
-| Noise floor RMS (needle up) | pending |
+| Peak / RMS (playing, 30 s) | Peak −15.3 dBFS, RMS −36.7 dBFS, quietest 50 ms window −56.6 dBFS. No clipping |
+| Noise floor (needle up, 10 s) | Peak −70.3 dBFS, RMS −81.6 dBFS |
 | Python version | 3.13.5 (Raspberry Pi OS, Pi 5) |
 
 Tested 2026-11-18 on Raspberry Pi 5 (Raspberry Pi OS Desktop).
 
 Note: `arecord --dump-hw-params` without `-f` ends with `Sample format non available`. That is only because
 arecord defaults to 8-bit; it is not a device problem.
+
+## Implications
+
+- Separation between the quietest music window (−56.6 dBFS) and the needle-up floor (−81.6 dBFS) is ~25 dB,
+  so RMS-based signal detection is feasible. Proposed default threshold: **−65 dBFS RMS** over ~0.5–1 s windows.
+- Peaks at −15 dBFS leave a lot of headroom; at 16-bit the music uses ~14 bits. 24-bit capture (`S32_LE`) is worth
+  evaluating once the Zero 2 W budget is known.
+- Not yet measured: surface noise in lead-in/run-out and inter-track grooves (relevant for the hold time).
