@@ -1,0 +1,28 @@
+[Unit]
+Description=VinylPilot – USB turntable streamer for Music Assistant
+Documentation=https://github.com/Mgns55/VinylPilot
+Wants=network-online.target
+After=network-online.target sound.target
+
+[Service]
+Type=simple
+User=vinylpilot
+Group=audio
+EnvironmentFile=-/etc/default/vinylpilot
+ExecStart=/opt/vinylpilot/.venv/bin/vinylpilot $VINYLPILOT_ARGS
+Environment=PYTHONUNBUFFERED=1
+# Identity and pairing live in /var/lib/vinylpilot (STATE_DIRECTORY)
+StateDirectory=vinylpilot
+StateDirectoryMode=0700
+Restart=always
+RestartSec=5
+# Audio first: slightly higher CPU and I/O priority than normal processes
+Nice=-5
+# Hardening
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

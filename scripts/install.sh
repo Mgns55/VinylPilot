@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+# VinylPilot installer for Raspberry Pi OS (Trixie or newer). Re-run to update.
+# Usage: curl -fsSL https://raw.githubusercontent.com/Mgns55/VinylPilot/main/scripts/install.sh | sudo bash
+set -euo pipefail
+
+REPO="https://github.com/Mgns55/VinylPilot.git"
+PREFIX="/opt/vinylpilot"
+SERVICE="vinylpilot"
+
+[[ $EUID -eq 0 ]] || { echo "Please run with sudo." >&2; exit 1; }
+
+python3 -c 'import sys; sys.exit(sys.version_info < (3, 12))' \
+  || { echo "Python 3.12+ required (Raspberry Pi OS Trixie)." >&2; exit 1; }
+
+echo "==> Packages"
+apt-get update -qq
+apt-get install -y -qq git python3-venv alsa-utils >/dev/null
+
+echo "==> Service user"
+id -u vinylpilot >/dev/null 2>&1 || useradd --system --no-create-home --shell /usr/sbin/nologin --groups audio vinylpilot
+
+echo "==> Code in $PREFIX"
+if [[ -d "$PREFIX/.git" ]]; then
+  git -C "$PREFIX" pull --ff-only
+else
+  git clone --depth 1 "$REPO" "$PREFIX"
+fi
+
+echo "==> Python environment (first run on a Zero 2 W takes a few minutes)"
+[[ -x "$PREFIX/.venv/bin/python" ]] || python3 -m venv "$PREFIX/.venv"
+"$PREFIX/.venv/bin/pip" install -q --upgrade pip
+"$PREFIX/.venv/bin/pip" install -q "$PREFIX"
+
+echo "==> Config"
+[[ -f /etc/default/vinylpilot ]] || cat > /etc/default/vinylpilot <<'CONF'
+# Extra arguments for vinylpilot, e.g.:
+# VINYLPILOT_ARGS="--name VinylPilot --threshold -65 --server-url ws://192.168.178.70:8927/sendspin"
+VINYLPILOT_ARGS=""
+CONF
+
+echo "==> Keep logs in RAM (no SD card writes)"
+mkdir -p /etc/systemd/journald.conf.d
+cat > /etc/systemd/journald.conf.d/vinylpilot.conf <<'CONF'
+[Journal]
+Storage=volatile
+RuntimeMaxUse=16M
+CONF
+systemctl restart systemd-journald
+
+echo "==> Wi-Fi power saving off (prevents audio dropouts)"
+if [[ -d /etc/NetworkManager/conf.d ]]; then
+  printf '[connection]\nwifi.powersave = 2\n' > /etc/NetworkManager/conf.d/vinylpilot-wifi-powersave.conf
+  systemctl reload NetworkManager || true
+fi
+command -v iw >/dev/null && iw dev wlan0 set power_save off 2>/dev/null || true
+
+echo "==> systemd service"
+install -m 0644 "$PREFIX/deploy/vinylpilot.service" /etc/systemd/system/vinylpilot.service
+systemctl daemon-reload
+systemctl enable --now "$SERVICE"
+systemctl restart "$SERVICE"
+
+echo
+echo "VinylPilot is running. Follow the log (pairing code appears here):"
+echo "  journalctl -u $SERVICE -f"

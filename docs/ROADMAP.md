@@ -16,12 +16,13 @@ See [hardware-validation.md](hardware-validation.md).
 - ✅ Capture live audio (code; arecord, auto-detect, reconnect)
 - ✅ Sendspin source client with pairing (aiosendspin 10.2.1, end-to-end test against a real Sendspin server)
 - ✅ RMS signal detection + signal reporting (pulled forward from Phase 4)
-- ⏳ Appears as Live Input in Music Assistant (see [mvp-test.md](mvp-test.md))
-- ☐ Play vinyl on existing network speakers
+- ✅ Appears as Live Input in Music Assistant, autostart works (2026-11-18)
+- ✅ Play vinyl on existing network speakers
 - ☐ Stability and audio-quality check (1 h continuous)
 - ☐ Measure RAM/CPU on Pi 5 as an early indicator
 
-## Phase 3 – Embedded deployment (Zero 2 W)
+## Phase 3 – Embedded deployment (Zero 2 W) ⏳
+- ✅ systemd unit, install/update script, journald in RAM, Wi-Fi power save off ([zero2w-setup.md](zero2w-setup.md))
 - ☐ Raspberry Pi OS Lite (64-bit, Trixie)
 - ☐ Measure CPU / RAM / Wi-Fi stability
 - ☐ systemd units, auto-start, auto-recovery, USB hot-plug
