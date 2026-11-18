@@ -13,7 +13,8 @@
 It captures the turntable's digital output and publishes it to [Music Assistant](https://www.music-assistant.io/)
 as a native **Sendspin Live Input**, for synchronized multiroom playback and Home Assistant integration.
 
-> **Status: pre-alpha.** Nothing here works yet. Hardware validation (Phase 1) is in progress.
+> **Status: pre-alpha.** Hardware validated; MVP code ready for its first test against Music Assistant.
+> Test guide: [docs/mvp-test.md](docs/mvp-test.md).
 > See [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## How it works

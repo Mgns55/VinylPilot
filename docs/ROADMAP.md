@@ -13,9 +13,10 @@ Legend: ✅ done · ⏳ in progress · ☐ open
 See [hardware-validation.md](hardware-validation.md).
 
 ## Phase 2 – MVP ⏳
-- ☐ Capture live audio
-- ☐ Sendspin source client with pairing (aiosendspin)
-- ☐ Appears as Live Input in Music Assistant
+- ✅ Capture live audio (code; arecord, auto-detect, reconnect)
+- ✅ Sendspin source client with pairing (aiosendspin 10.2.1, end-to-end test against a real Sendspin server)
+- ✅ RMS signal detection + signal reporting (pulled forward from Phase 4)
+- ⏳ Appears as Live Input in Music Assistant (see [mvp-test.md](mvp-test.md))
 - ☐ Play vinyl on existing network speakers
 - ☐ Stability and audio-quality check (1 h continuous)
 - ☐ Measure RAM/CPU on Pi 5 as an early indicator
