@@ -21,16 +21,17 @@ See [hardware-validation.md](hardware-validation.md).
 - ☐ Stability and audio-quality check (1 h continuous)
 - ☐ Measure RAM/CPU on Pi 5 as an early indicator
 
-## Phase 3 – Embedded deployment (Zero 2 W) ⏳
+## Phase 3 – Embedded deployment (Zero 2 W) ✅
+- ✅ Measured on Zero 2 W (2026-11-20): 74 MB RSS, ~9 % of one core while streaming; desktop image needs GUI/PipeWire/PackageKit disabled (Lite recommended)
 - ✅ systemd unit, install/update script, journald in RAM, Wi-Fi power save off ([zero2w-setup.md](zero2w-setup.md))
 - ☐ Raspberry Pi OS Lite (64-bit, Trixie)
 - ☐ Measure CPU / RAM / Wi-Fi stability
 - ☐ systemd units, auto-start, auto-recovery, USB hot-plug
 
 ## Phase 4 – Intelligent features
-- ☐ RMS signal detection, threshold, activation delay, hold
-- ☐ Signal reporting → MA autostart
-- ☐ MQTT + Home Assistant Discovery
+- ✅ RMS signal detection, threshold, activation delay, hold
+- ✅ Signal reporting → MA autostart
+- ✅ MQTT + Home Assistant Discovery ([home-assistant.md](home-assistant.md)), tested against a local broker
 
 ## Phase 5 – Web interface
 - ☐ Dashboard, VU meters, waveform

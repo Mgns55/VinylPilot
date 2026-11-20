@@ -34,8 +34,14 @@ echo "==> Python environment (first run on a Zero 2 W takes a few minutes)"
 echo "==> Config"
 [[ -f /etc/default/vinylpilot ]] || cat > /etc/default/vinylpilot <<'CONF'
 # Extra arguments for vinylpilot, e.g.:
-# VINYLPILOT_ARGS="--name VinylPilot --threshold -65 --server-url ws://192.168.178.70:8927/sendspin"
+# VINYLPILOT_ARGS="--name VinylPilot --mqtt-host 192.168.178.70 --mqtt-user vinylpilot"
+# The MQTT password goes into /etc/vinylpilot/secrets.env, not here.
 VINYLPILOT_ARGS=""
+CONF
+install -d -m 0700 /etc/vinylpilot
+[[ -f /etc/vinylpilot/secrets.env ]] || install -m 0600 /dev/stdin /etc/vinylpilot/secrets.env <<'CONF'
+# Root-only. Loaded by systemd and passed to VinylPilot as environment variables.
+VINYLPILOT_MQTT_PASSWORD=
 CONF
 
 echo "==> Keep logs in RAM (no SD card writes)"

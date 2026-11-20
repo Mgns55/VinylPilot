@@ -163,6 +163,10 @@ class SendspinSource:
         return getattr(self._client, "_admitted_connection", None)
 
     @property
+    def connected(self) -> bool:
+        return self._connection() is not None
+
+    @property
     def streaming(self) -> bool:
         conn = self._connection()
         return bool(self._capture is not None and conn is not None and conn.is_source_stream_active())

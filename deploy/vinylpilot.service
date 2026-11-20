@@ -9,6 +9,8 @@ Type=simple
 User=vinylpilot
 Group=audio
 EnvironmentFile=-/etc/default/vinylpilot
+# Secrets (VINYLPILOT_MQTT_PASSWORD); root-only file, read by systemd before dropping privileges
+EnvironmentFile=-/etc/vinylpilot/secrets.env
 ExecStart=/opt/vinylpilot/.venv/bin/vinylpilot $VINYLPILOT_ARGS
 Environment=PYTHONUNBUFFERED=1
 # Identity and pairing live in /var/lib/vinylpilot (STATE_DIRECTORY)
