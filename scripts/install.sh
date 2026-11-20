@@ -13,8 +13,15 @@ python3 -c 'import sys; sys.exit(sys.version_info < (3, 12))' \
   || { echo "Python 3.12+ required (Raspberry Pi OS Trixie)." >&2; exit 1; }
 
 echo "==> Packages"
-apt-get update -qq
-apt-get install -y -qq git python3-venv alsa-utils >/dev/null
+PKGS=(git python3-venv alsa-utils)
+MISSING=()
+for p in "${PKGS[@]}"; do dpkg -s "$p" >/dev/null 2>&1 || MISSING+=("$p"); done
+if (( ${#MISSING[@]} )); then
+  apt-get update -qq || echo "warning: apt-get update reported errors, continuing"
+  apt-get install -y -qq "${MISSING[@]}" >/dev/null
+else
+  echo "    already installed"
+fi
 
 echo "==> Service user"
 id -u vinylpilot >/dev/null 2>&1 || useradd --system --no-create-home --shell /usr/sbin/nologin --groups audio vinylpilot
