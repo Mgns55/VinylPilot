@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -7,7 +7,7 @@ name = "vinylpilot"
 version = "0.1.0.dev0"
 description = "USB turntable streamer for Music Assistant (Sendspin source) and Home Assistant"
 readme = "README.md"
-license = { text = "Apache-2.0" }
+license = "Apache-2.0"
 requires-python = ">=3.12"
 dependencies = [
   # Pinned to the version Music Assistant 2.10.12 ships with.

@@ -48,8 +48,21 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return p.parse_args(argv)
 
 
+async def _wait_for_device(spec: str) -> tuple[str, str]:
+    """Resolve the capture device; with ``auto``, wait until a USB device appears."""
+    warned = False
+    while True:
+        try:
+            return resolve_device(spec)
+        except LookupError:
+            if not warned:
+                logger.warning("No USB audio capture device found; waiting for the turntable…")
+                warned = True
+            await asyncio.sleep(2)
+
+
 async def run(args: argparse.Namespace) -> None:
-    device, label = resolve_device(args.device)
+    device, label = await _wait_for_device(args.device)
     logger.info("VinylPilot %s — input: %s (%s)", __version__, label, device)
 
     capture = ArecordCapture(device, args.rate)
