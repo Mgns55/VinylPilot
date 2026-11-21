@@ -1,0 +1,6 @@
+[Unit]
+Description=VinylPilot network watchdog check
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/vinylpilot-netwatch

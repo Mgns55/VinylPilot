@@ -40,3 +40,14 @@ Targets: < 100 MB RAM, < 15 % CPU while streaming.
 ## Options
 
 Edit `/etc/default/vinylpilot`, then `sudo systemctl restart vinylpilot`.
+
+## Watchdogs
+
+The Zero 2 W's Wi-Fi chip (BCM43430) occasionally fails to recover after a dropped connection.
+The installer therefore sets up:
+
+- **Network watchdog** (`vinylpilot-netwatch.timer`, every minute): pings the default gateway;
+  after 3 failed minutes it toggles Wi-Fi, after 6 it reloads the `brcmfmac` driver, after 10 it reboots
+  (only if the Pi has been up for more than 30 minutes, to avoid reboot loops while the router is down).
+  Log: `journalctl -t vinylpilot-netwatch`
+- **Hardware watchdog** (`RuntimeWatchdogSec=15s`): reboots if the whole system freezes.

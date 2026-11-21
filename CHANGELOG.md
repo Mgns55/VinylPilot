@@ -4,6 +4,7 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 
 ## [Unreleased]
 ### Added
+- Network watchdog (Wi-Fi toggle → driver reload → reboot) and hardware watchdog for the Zero 2 W
 - Optional track recognition via the unofficial Shazam API (`--recognize shazam`): Now playing
   sensor and cover image in Home Assistant; lookups at record start, after track gaps, every 3 min
 - A vanished USB input now counts as 'no signal', so Music Assistant autostart works again

@@ -69,10 +69,23 @@ if [[ -d /etc/NetworkManager/conf.d ]]; then
 fi
 command -v iw >/dev/null && iw dev wlan0 set power_save off 2>/dev/null || true
 
+echo "==> Watchdogs (network + hardware)"
+install -m 0755 "$PREFIX/deploy/vinylpilot-netwatch.sh" /usr/local/sbin/vinylpilot-netwatch
+install -m 0644 "$PREFIX/deploy/vinylpilot-netwatch.service" /etc/systemd/system/vinylpilot-netwatch.service
+install -m 0644 "$PREFIX/deploy/vinylpilot-netwatch.timer" /etc/systemd/system/vinylpilot-netwatch.timer
+mkdir -p /etc/systemd/system.conf.d
+cat > /etc/systemd/system.conf.d/vinylpilot-watchdog.conf <<'CONF'
+[Manager]
+# Hardware watchdog: reboot if the system freezes for 15 s
+RuntimeWatchdogSec=15s
+CONF
+systemctl daemon-reexec
+
 echo "==> systemd service"
 install -m 0644 "$PREFIX/deploy/vinylpilot.service" /etc/systemd/system/vinylpilot.service
 systemctl daemon-reload
 systemctl enable --now "$SERVICE"
+systemctl enable --now vinylpilot-netwatch.timer
 systemctl restart "$SERVICE"
 
 echo
