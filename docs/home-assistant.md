@@ -34,3 +34,24 @@ Home Assistant MQTT Discovery as one device, **VinylPilot**. Nothing extra is ne
 Topics: `vinylpilot/<hostname>/{availability,state,levels,system,set/threshold,set/hold}`.
 
 Tip: exclude the two level sensors from the recorder if you do not need their history.
+
+## Track recognition (optional, Shazam)
+
+VinylPilot can identify the playing song and publish it as **Now playing** (artist – title, with
+album, cover URL and Shazam link as attributes) plus a **Cover** image entity.
+
+```bash
+sudo nano /etc/default/vinylpilot
+# add: --recognize shazam
+curl -fsSL https://raw.githubusercontent.com/Mgns55/VinylPilot/main/scripts/install.sh | sudo bash
+```
+
+How it works: ~14 s after a record starts and after every pause between tracks (window level below
+`--gap-threshold`, default −55 dBFS, for ≥ 1 s) VinylPilot sends a 12 s excerpt to Shazam; a re-check
+runs every 3 minutes for gapless sides. Lookups run in a short-lived, low-priority helper process, so
+the recognition library only uses memory during a lookup.
+
+**Caveats:** this uses the unofficial, reverse-engineered Shazam API (`shazamio`). It needs internet
+access, sends audio fingerprints to Shazam, is not endorsed by Shazam/Apple and may stop working
+at any time. It is off by default. Music Assistant itself keeps showing the source name, because
+Sendspin has no way for a source to send track metadata to the server.

@@ -45,6 +45,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--mqtt-host", help="MQTT broker; enables Home Assistant integration")
     p.add_argument("--mqtt-port", type=int, default=1883)
     p.add_argument("--mqtt-user", help="MQTT username (password via VINYLPILOT_MQTT_PASSWORD)")
+    p.add_argument("--recognize", choices=["off", "shazam"], default="off",
+                   help="identify the playing track (shazam: unofficial API, needs internet)")
+    p.add_argument("--gap-threshold", type=float, default=-55.0,
+                   help="level below which a pause between tracks is assumed (default: -55 dBFS)")
     p.add_argument("--show-levels", action="store_true", help="log input levels once per second")
     p.add_argument("--list-devices", action="store_true", help="list USB capture devices and exit")
     p.add_argument("--state-dir", type=Path, default=_default_state_dir(), help="where identity and pairing are stored")
@@ -88,6 +92,17 @@ async def run(args: argparse.Namespace) -> None:
         port=args.port,
     )
     await source.start()
+
+    recognizer = None
+    if args.recognize == "shazam":
+        from .recognition import TrackRecognizer
+
+        def on_track(track: dict | None) -> None:
+            status.now_playing = track
+            status.changed.set()
+
+        recognizer = TrackRecognizer(args.rate, capture.chunk_s, on_track, gap_db=args.gap_threshold)
+        logger.info("Track recognition enabled (Shazam)")
 
     tasks: list[asyncio.Task[None]] = []
     if args.mqtt_host:
@@ -139,6 +154,8 @@ async def run(args: argparse.Namespace) -> None:
                 await source.feed(pcm, ts)
             except Exception:  # noqa: BLE001 - capture and detection keep running
                 logger.exception("Unexpected error while streaming; continuing")
+            if recognizer is not None:
+                recognizer.feed(pcm, meter.window_rms_db, detector.present)
             _update_status(status, capture, source, detector, levels)
             if args.show_levels and loop.time() - last_report >= 1.0:
                 last_report = loop.time()

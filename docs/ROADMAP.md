@@ -33,6 +33,10 @@ See [hardware-validation.md](hardware-validation.md).
 - ✅ Signal reporting → MA autostart
 - ✅ MQTT + Home Assistant Discovery ([home-assistant.md](home-assistant.md)), tested against a local broker
 
+## Phase 4b – Track recognition
+- ✅ Optional Shazam recognition → MQTT Now playing + cover (code + tests; live lookup not yet verified)
+- ☐ Propose source metadata for Sendspin / Music Assistant (so MA can show the track)
+
 ## Phase 5 – Web interface
 - ☐ Dashboard, VU meters, waveform
 - ☐ Settings, system monitoring, diagnostics

@@ -36,7 +36,9 @@ fi
 echo "==> Python environment (first run on a Zero 2 W takes a few minutes)"
 [[ -x "$PREFIX/.venv/bin/python" ]] || python3 -m venv "$PREFIX/.venv"
 "$PREFIX/.venv/bin/pip" install -q --upgrade pip
-"$PREFIX/.venv/bin/pip" install -q "$PREFIX"
+EXTRAS=""
+grep -q -- "--recognize shazam" /etc/default/vinylpilot 2>/dev/null && EXTRAS="[shazam]"
+"$PREFIX/.venv/bin/pip" install -q "$PREFIX$EXTRAS"
 
 echo "==> Config"
 [[ -f /etc/default/vinylpilot ]] || cat > /etc/default/vinylpilot <<'CONF'

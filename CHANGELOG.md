@@ -4,6 +4,9 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 
 ## [Unreleased]
 ### Added
+- Optional track recognition via the unofficial Shazam API (`--recognize shazam`): Now playing
+  sensor and cover image in Home Assistant; lookups at record start, after track gaps, every 3 min
+- A vanished USB input now counts as 'no signal', so Music Assistant autostart works again
 - Optional MQTT with Home Assistant Discovery: availability (last will), turntable/record/streaming/MA
   binary sensors, levels, system metrics, threshold and hold as numbers
 - systemd service, installer/updater for Raspberry Pi OS, root-only secrets file

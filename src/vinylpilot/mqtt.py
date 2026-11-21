@@ -36,6 +36,7 @@ class Status:
     level_right: float = -120.0
     threshold_db: float = -65.0
     hold_s: float = 10.0
+    now_playing: dict[str, Any] | None = None
     changed: asyncio.Event = field(default_factory=asyncio.Event)
 
 
@@ -113,6 +114,13 @@ class MqttPublisher:
               device_class="signal_strength", state_class="measurement", **diag),
             s("boot_time", "Last boot", sysst, device_class="timestamp", **diag),
             s("version", "Version", sysst, **diag),
+            ("sensor", "now_playing", {
+                "name": "Now playing", "state_topic": f"{self.base}/now_playing",
+                "value_template": "{{ (value_json.artist ~ ' – ' ~ value_json.title) if value_json.title else 'None' }}",
+                "json_attributes_topic": f"{self.base}/now_playing", "icon": "mdi:album"}),
+            ("image", "cover", {
+                "name": "Cover", "url_topic": f"{self.base}/now_playing",
+                "url_template": "{{ value_json.cover }}"}),
             ("number", "threshold", {
                 "name": "Detection threshold", "state_topic": st,
                 "value_template": "{{ value_json.threshold_db }}",
@@ -164,6 +172,7 @@ class MqttPublisher:
     async def _publish_loop(self, client: aiomqtt.Client) -> None:
         loop = asyncio.get_running_loop()
         last_state: dict[str, Any] | None = None
+        last_track: Any = object()
         next_levels = next_system = 0.0
         while True:
             now = loop.time()
@@ -171,6 +180,11 @@ class MqttPublisher:
             if state != last_state:
                 await client.publish(f"{self.base}/state", json.dumps(state), retain=True)
                 last_state = state
+            if self.status.now_playing != last_track:
+                last_track = self.status.now_playing
+                await client.publish(f"{self.base}/now_playing",
+                                     json.dumps(last_track or {"title": "", "artist": "", "album": "",
+                                                               "cover": "", "url": ""}), retain=True)
             if now >= next_levels:
                 await client.publish(f"{self.base}/levels", json.dumps({
                     "level_left": round(self.status.level_left, 1),
