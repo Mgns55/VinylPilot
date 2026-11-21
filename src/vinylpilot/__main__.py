@@ -120,6 +120,14 @@ async def run(args: argparse.Namespace) -> None:
     loop = asyncio.get_running_loop()
     try:
         async for pcm in capture.chunks():
+            if not pcm:
+                # Turntable vanished (USB unplugged, powered down): that is "no record playing".
+                if detector.reset():
+                    logger.info("Record stopped (input lost)")
+                    await source.set_signal(False)
+                status.turntable_connected = status.record_playing = False
+                status.changed.set()
+                continue
             now_us = source.now_us()
             # The chunk's first sample was captured roughly one chunk ago.
             ts = now_us - chunk_us if now_us is not None else None

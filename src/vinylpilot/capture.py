@@ -39,7 +39,11 @@ class ArecordCapture:
         ]
 
     async def chunks(self) -> AsyncIterator[bytes]:
-        """Yield fixed-size PCM chunks forever, surviving device loss."""
+        """Yield fixed-size PCM chunks forever, surviving device loss.
+
+        An empty ``b""`` chunk is yielded once whenever a running capture is lost,
+        so the caller can treat a vanished turntable as silence.
+        """
         backoff = 1.0
         while True:
             proc = await asyncio.create_subprocess_exec(
@@ -68,7 +72,9 @@ class ArecordCapture:
                     except (TimeoutError, asyncio.CancelledError):
                         pass
                 await proc.wait()
-            self.running = False
+            was_running, self.running = self.running, False
+            if was_running:
+                yield b""
             message = stderr.decode(errors="replace").strip().splitlines()
             logger.warning(
                 "Capture stopped (%s); retrying in %.0f s",

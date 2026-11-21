@@ -32,3 +32,11 @@ def test_detector_activation_and_hold():
     for _ in range(499):
         assert not d.update(-75, 0.02)
     assert d.update(-75, 0.02) and not d.present  # 10 s of silence
+
+
+def test_reset_forces_absent():
+    d = SignalDetector(threshold_db=-65, activation_s=0.02, hold_s=10.0)
+    assert d.update(-40, 0.02) and d.present
+    assert d.reset() and not d.present
+    assert not d.reset()
+    assert d.update(-40, 0.02) and d.present  # a fresh edge after the device returns

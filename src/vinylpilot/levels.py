@@ -73,6 +73,13 @@ class SignalDetector:
         self._above_s = 0.0
         self._below_s = 0.0
 
+    def reset(self) -> bool:
+        """Force 'absent' (e.g. the input device vanished); return True if it changed."""
+        changed = self.present
+        self.present = False
+        self._above_s = self._below_s = 0.0
+        return changed
+
     def update(self, level_db: float, duration_s: float) -> bool:
         """Feed one measurement; return True if the state changed."""
         if level_db >= self.threshold_db:
