@@ -3,6 +3,10 @@
 All notable changes to this project are documented here. Format: [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
+### Fixed
+- Startup no longer waits for the turntable: Music Assistant and MQTT come up even when the
+  turntable is off; capture finds the USB device on its own
+
 ### Added
 - Network watchdog (Wi-Fi toggle → driver reload → reboot) and hardware watchdog for the Zero 2 W
 - Optional track recognition via the unofficial Shazam API (`--recognize shazam`): Now playing

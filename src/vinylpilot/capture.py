@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 
 logger = logging.getLogger(__name__)
 
@@ -17,8 +17,17 @@ class ArecordCapture:
     A USB disconnect makes arecord exit; we wait and restart it until the device is back.
     """
 
-    def __init__(self, device: str, sample_rate: int, chunk_ms: int = 20) -> None:
+    def __init__(
+        self,
+        device: str,
+        sample_rate: int,
+        chunk_ms: int = 20,
+        resolve: Callable[[], str | None] | None = None,
+    ) -> None:
+        # ``resolve`` is called before every (re)start, e.g. to find the USB card again
+        # after it was unplugged or switched off; None means "not there yet".
         self.device = device
+        self._resolve = resolve
         self.sample_rate = sample_rate
         self.chunk_frames = sample_rate * chunk_ms // 1000
         self.chunk_bytes = self.chunk_frames * BYTES_PER_FRAME
@@ -45,7 +54,18 @@ class ArecordCapture:
         so the caller can treat a vanished turntable as silence.
         """
         backoff = 1.0
+        waiting_logged = False
         while True:
+            if self._resolve is not None:
+                found = self._resolve()
+                if found is None:
+                    if not waiting_logged:
+                        logger.warning("No USB audio capture device found; waiting for the turntable")
+                        waiting_logged = True
+                    await asyncio.sleep(2)
+                    continue
+                waiting_logged = False
+                self.device = found
             proc = await asyncio.create_subprocess_exec(
                 *self._command(),
                 stdout=asyncio.subprocess.PIPE,

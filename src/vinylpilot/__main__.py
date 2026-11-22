@@ -57,21 +57,17 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return p.parse_args(argv)
 
 
-async def _wait_for_device(spec: str) -> tuple[str, str]:
-    """Resolve the capture device; with ``auto``, wait until a USB device appears."""
-    warned = False
-    while True:
-        try:
-            return resolve_device(spec)
-        except LookupError:
-            if not warned:
-                logger.warning("No USB audio capture device found; waiting for the turntable…")
-                warned = True
-            await asyncio.sleep(2)
-
-
 async def run(args: argparse.Namespace) -> None:
-    device, label = await _wait_for_device(args.device)
+    # Never block startup on the turntable: Music Assistant and MQTT must come up even
+    # when the turntable is switched off. Capture finds the device on its own.
+    def resolve() -> str | None:
+        try:
+            return resolve_device(args.device)[0]
+        except LookupError:
+            return None
+
+    device = args.device
+    label = "auto-detect" if args.device == "auto" else args.device
     logger.info("VinylPilot %s — input: %s (%s)", __version__, label, device)
 
     settings_file = args.state_dir / "settings.json"
@@ -79,7 +75,7 @@ async def run(args: argparse.Namespace) -> None:
     threshold = saved.get("threshold_db", args.threshold)
     hold = saved.get("hold_s", args.hold)
 
-    capture = ArecordCapture(device, args.rate)
+    capture = ArecordCapture(device, args.rate, resolve=resolve if args.device == "auto" else None)
     meter = LevelMeter(window_chunks=max(1, int(0.5 / capture.chunk_s)))  # 0.5 s window
     detector = SignalDetector(threshold, args.activation, hold)
     status = Status(turntable_name=label, threshold_db=threshold, hold_s=hold)
