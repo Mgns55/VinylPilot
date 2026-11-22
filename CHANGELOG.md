@@ -4,6 +4,8 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 
 ## [Unreleased]
 ### Fixed
+- Fast shutdown: MQTT, Sendspin and a running Shazam lookup are stopped within a few seconds;
+  systemd TimeoutStopSec=15 (a restart previously hung for 90 s before SIGKILL)
 - Startup no longer waits for the turntable: Music Assistant and MQTT come up even when the
   turntable is off; capture finds the USB device on its own
 

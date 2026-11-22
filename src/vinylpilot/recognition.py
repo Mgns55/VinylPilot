@@ -58,6 +58,7 @@ class TrackRecognizer:
         self._last_lookup = 0.0
         self._misses = 0
         self._task: asyncio.Task[None] | None = None
+        self._proc: asyncio.subprocess.Process | None = None
         self.current: dict[str, Any] | None = None
 
     # ---- called for every chunk -------------------------------------------
@@ -125,6 +126,7 @@ class TrackRecognizer:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
+            self._proc = proc
             out, err = await asyncio.wait_for(proc.communicate(wav), timeout=self.timeout_s)
         except TimeoutError:
             logger.warning("Track recognition timed out")
@@ -155,6 +157,13 @@ class TrackRecognizer:
         self.current = result
         logger.info("Now playing: %s – %s", result.get("artist"), result.get("title"))
         self.on_result(result)
+
+    def close(self) -> None:
+        """Stop any running lookup (used on shutdown)."""
+        if self._proc is not None and self._proc.returncode is None:
+            self._proc.kill()
+        if self._task is not None:
+            self._task.cancel()
 
     def _retry(self) -> None:
         self._misses += 1

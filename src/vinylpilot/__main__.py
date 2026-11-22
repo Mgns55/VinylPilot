@@ -163,10 +163,20 @@ async def run(args: argparse.Namespace) -> None:
                     "streaming" if source.streaming else "not streaming",
                 )
     finally:
+        # Shut down quickly: every step is bounded so systemd never has to SIGKILL us.
+        if recognizer is not None:
+            recognizer.close()
         for task in tasks:
             task.cancel()
-        await asyncio.gather(*tasks, return_exceptions=True)
-        await source.stop()
+        try:
+            await asyncio.wait_for(asyncio.gather(*tasks, return_exceptions=True), 3)
+        except TimeoutError:
+            logger.warning("MQTT did not stop in time")
+        try:
+            await asyncio.wait_for(source.stop(), 3)
+        except (TimeoutError, Exception) as err:  # noqa: BLE001
+            logger.warning("Sendspin did not stop cleanly: %s", err or "timeout")
+        logger.info("Stopped")
 
 
 def _update_status(status: Status, capture, source, detector, levels) -> None:  # noqa: ANN001
