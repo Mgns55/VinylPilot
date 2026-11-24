@@ -53,7 +53,7 @@ class MqttSettings:
 
 # Shown as cover when nothing is recognised; an empty URL makes Home Assistant log image errors.
 COVER_PLACEHOLDER = (
-    "https://raw.githubusercontent.com/Mgns55/VinylPilot/main/assets/brand/png/icon-square-dark-512.png"
+    "https://raw.githubusercontent.com/Mgns55/VinylPilot/main/assets/brand/png/vinyl-placeholder-512.png"
 )
 
 

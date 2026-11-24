@@ -41,9 +41,11 @@ mounts the share at `/mnt/vinylpilot` on demand (systemd automount).
 
 Then: **Digitalisieren → Aufnahme starten**, put the needle down. VinylPilot
 
-- creates a folder `Vinyl YYYY-MM-DD HH-MM`,
 - starts a new file at every pause between tracks (≥ 30 s per track) and when a side ends,
-- names and tags files `NN - Artist - Title` when Shazam recognition is on (else `NN - Track NN`),
+- files recognised tracks as `Artist/Album/NN - Title.flac` (a new folder per album; numbering continues
+  across sides and later sessions of the same album), unrecognised ones as `Unbekannt/Vinyl <date>/NN - Track NN`,
+- tags FLAC files (TITLE, ARTIST, ALBUMARTIST, ALBUM, DATE, GENRE, TRACKNUMBER), embeds the cover and
+  saves it as `cover.jpg` in the album folder,
 - converts each finished track to FLAC at low priority (`flac`), keeps WAV on failure,
 - stops automatically after 30 minutes without music.
 

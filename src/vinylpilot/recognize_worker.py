@@ -19,11 +19,13 @@ def _extract(answer: dict[str, Any]) -> dict[str, Any]:
     track = answer.get("track") or {}
     if not track:
         return {}
-    album = ""
+    album = year = ""
     for section in track.get("sections") or []:
         for item in section.get("metadata") or []:
             if item.get("title") in ("Album", "Albüm", "Album:"):
                 album = item.get("text", "")
+            elif item.get("title") in ("Released", "Release", "Veröffentlicht"):
+                year = str(item.get("text", ""))[:4]
     images = track.get("images") or {}
     return {
         "title": track.get("title", ""),
@@ -32,6 +34,8 @@ def _extract(answer: dict[str, Any]) -> dict[str, Any]:
         "cover": images.get("coverarthq") or images.get("coverart") or "",
         "url": track.get("url", ""),
         "key": str(track.get("key", "")),
+        "year": year if year.isdigit() else "",
+        "genre": (track.get("genres") or {}).get("primary", ""),
     }
 
 

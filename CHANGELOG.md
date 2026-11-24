@@ -12,6 +12,10 @@ All notable changes to this project are documented here. Format: [Keep a Changel
   turntable is off; capture finds the USB device on its own
 
 ### Added
+- Digitising: one folder per album (`Artist/Album`), continuous numbering, embedded cover + cover.jpg,
+  year and genre tags
+- Web: logo groove turns at 33⅓ rpm while a record plays; spinning record as empty cover
+  (also used as the Home Assistant cover placeholder)
 - Web interface on port 80 (separate service): dashboard with live VU meters and waveform,
   now playing, stylus hours, digitising to a Synology share, settings, diagnostics, logs,
   one-click update (polkit-restricted), optional password

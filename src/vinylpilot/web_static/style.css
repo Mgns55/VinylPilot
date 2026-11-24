@@ -147,3 +147,15 @@ select { display: block; }
   .nowplaying { flex-direction: column; align-items: flex-start; }
   .cover { width: 100%; height: auto; aspect-ratio: 1; max-width: 260px; }
 }
+
+/* ---- motion: 33 1/3 rpm = 1.8 s per turn ---- */
+.logo .vp-play { transform-box: fill-box; transform-origin: center; }
+@keyframes vp-intro { from { opacity: 0; } to { opacity: .8; } }
+@keyframes vp-spin { to { transform: rotate(360deg); } }
+@keyframes vp-pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: .55; transform: scale(.88); } }
+.logo .vp-arc { animation: vp-intro 1.2s ease-out both; }
+body.playing .logo .vp-play { animation: vp-pulse 1.8s ease-in-out infinite; }
+.cover.spin { animation: vp-spin 1.8s linear infinite; border-radius: 50%; }
+@media (prefers-reduced-motion: reduce) {
+  .logo .vp-arc, body.playing .logo .vp-play, .cover.spin { animation: none; }
+}

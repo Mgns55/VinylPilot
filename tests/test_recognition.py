@@ -17,7 +17,8 @@ SHAZAM_ANSWER = {
 def test_extract():
     r = _extract(SHAZAM_ANSWER)
     assert r == {"title": "Teardrop", "artist": "Massive Attack", "album": "Mezzanine",
-                 "cover": "https://img/hq.jpg", "url": "https://shazam/x", "key": "123"}
+                 "cover": "https://img/hq.jpg", "url": "https://shazam/x", "key": "123",
+                 "year": "", "genre": ""}
     assert _extract({"matches": []}) == {}
 
 

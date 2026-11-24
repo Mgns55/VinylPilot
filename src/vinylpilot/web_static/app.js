@@ -3,7 +3,7 @@
 // opens the live-level WebSocket only while the overview tab is shown.
 
 const $ = (id) => document.getElementById(id);
-const COVER_FALLBACK = "/static/cover.svg";
+const COVER_FALLBACK = "/static/vinyl.svg";
 let state = null;
 let tab = "overview";
 let ws = null;
@@ -65,6 +65,7 @@ async function poll() {
   } catch (e) {
     $("health").className = "health bad";
     $("health-text").textContent = "Dienst nicht erreichbar";
+    setPlaying(false);
   }
 }
 function startPolling() {
@@ -91,6 +92,9 @@ function render() {
   $("np-album").textContent = np?.album || "";
   const cover = np?.cover || COVER_FALLBACK;
   if ($("np-cover").getAttribute("src") !== cover) $("np-cover").src = cover;
+  // the placeholder record spins at 33 1/3 rpm while a record plays
+  $("np-cover").classList.toggle("spin", !np?.cover && s.record_playing);
+  setPlaying(s.record_playing);
   $("tt-name").textContent = s.turntable.connected ? (s.turntable.name || s.turntable.device) : "kein Plattenspieler";
   const f = s.format;
   $("fmt").textContent = `${f.sample_rate / 1000} kHz · ${f.bit_depth} Bit · ${f.channels === 2 ? "Stereo" : f.channels + " Kanäle"} · ${f.codec.toUpperCase()}`;
@@ -141,6 +145,17 @@ function render() {
     ["MQTT", s.mqtt.enabled ? `${yes(s.mqtt.connected)} · ${esc(s.mqtt.host)}` : "nicht eingerichtet"],
   ]);
   fillSettings(false);
+}
+
+// ---------- logo: the groove arc turns at 33 1/3 rpm while a record plays ----------
+const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+let logoSpinning = false;
+function setPlaying(on) {
+  document.body.classList.toggle("playing", on);
+  const spin = $("vp-spin");
+  if (!spin || reducedMotion || on === logoSpinning) return;
+  logoSpinning = on;
+  try { on ? spin.beginElement() : spin.endElement(); } catch (_) { /* SMIL unsupported */ }
 }
 
 // ---------- live levels ----------

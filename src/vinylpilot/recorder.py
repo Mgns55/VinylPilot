@@ -99,6 +99,8 @@ class Recorder:
         self.auto_stop_silence_s = auto_stop_silence_s
         self.fmt = fmt
         self.session_dir: Path | None = None
+        self.session_name: str | None = None
+        self._album_numbers: dict[Path, int] = {}
         self.started: float | None = None
         self.track: Track | None = None
         self._writer: _WavWriter | None = None
@@ -109,6 +111,7 @@ class Recorder:
         self.finished: list[str] = []
         self.error: str | None = None
         self._jobs: set[asyncio.Task[None]] = set()
+        self._finalise_lock = asyncio.Lock()
 
     # ---- control -----------------------------------------------------------
 
@@ -132,9 +135,10 @@ class Recorder:
         ok, reason = self.target_ready()
         if not ok:
             raise RuntimeError(f"recording target {self.base_dir}: {reason}")
-        name = datetime.now().strftime("Vinyl %Y-%m-%d %H-%M")
-        self.session_dir = self.base_dir / name
+        self.session_name = datetime.now().strftime("Vinyl %Y-%m-%d %H-%M")
+        self.session_dir = self.base_dir / ".vinylpilot-tmp" / self.session_name
         self.session_dir.mkdir(parents=True, exist_ok=True)
+        self._album_numbers = {}
         self.started = time.time()
         self._count = 0
         self.finished = []
@@ -145,8 +149,12 @@ class Recorder:
         if not self.active:
             return
         self._close_track()
-        logger.info("Recording stopped: %s", self.session_dir)
+        logger.info("Recording stopped: %s", self.session_name)
+        tmp = self.session_dir
         self.session_dir = None
+        job = asyncio.get_running_loop().create_task(self._cleanup_tmp(tmp))
+        self._jobs.add(job)
+        job.add_done_callback(self._jobs.discard)
         self.started = None
 
     def set_track_meta(self, meta: dict[str, Any] | None) -> None:
@@ -221,32 +229,95 @@ class Recorder:
         except OSError:
             pass
 
+    def _album_dir(self, meta: dict[str, Any]) -> Path:
+        """Artist/Album for recognised records, else Unbekannt/<session>."""
+        if meta.get("artist") and meta.get("album"):
+            return self.base_dir / _safe(meta["artist"]) / _safe(meta["album"])
+        return self.base_dir / "Unbekannt" / (self.session_name or "Vinyl")
+
+    def _next_number(self, album_dir: Path) -> int:
+        """Continue numbering across sides and across sessions for the same album."""
+        if album_dir not in self._album_numbers:
+            existing = 0
+            if album_dir.is_dir():
+                for f in album_dir.iterdir():
+                    m = re.match(r"(\d+) - ", f.name)
+                    if m:
+                        existing = max(existing, int(m.group(1)))
+            self._album_numbers[album_dir] = existing
+        self._album_numbers[album_dir] += 1
+        return self._album_numbers[album_dir]
+
+    async def _fetch_cover(self, url: str, album_dir: Path) -> Path | None:
+        target = album_dir / "cover.jpg"
+        if target.exists():
+            return target
+        if not url.startswith("https://"):
+            return None
+        try:
+            import aiohttp
+
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15)) as s:
+                async with s.get(url) as resp:
+                    if resp.status != 200:
+                        return None
+                    data = await resp.read()
+            await asyncio.to_thread(target.write_bytes, data)
+            return target
+        except Exception as err:  # noqa: BLE001
+            logger.info("Cover not downloaded: %s", err)
+            return None
+
     async def _finalise(self, track: Track, writer: _WavWriter) -> None:
+        # One at a time, in recording order: keeps track numbers right and runs only
+        # one FLAC encoder on the Zero.
+        async with self._finalise_lock:
+            await self._finalise_locked(track, writer)
+
+    async def _finalise_locked(self, track: Track, writer: _WavWriter) -> None:
         await asyncio.to_thread(writer.join, 30)
         meta = track.meta
-        if meta.get("title"):
-            stem = f"{track.number:02d} - {_safe(meta.get('artist', ''))} - {_safe(meta['title'])}"
-        else:
-            stem = f"{track.number:02d} - Track {track.number:02d}"
+        album_dir = self._album_dir(meta)
+        await asyncio.to_thread(album_dir.mkdir, parents=True, exist_ok=True)
+        number = self._next_number(album_dir)
+        title = meta.get("title")
+        stem = f"{number:02d} - {_safe(title)}" if title else f"{number:02d} - Track {number:02d}"
+        cover = await self._fetch_cover(meta.get("cover", ""), album_dir) if title else None
         if self.fmt == "flac" and shutil.which("flac"):
-            target = track.path.with_name(stem + ".flac")
+            target = album_dir / (stem + ".flac")
             cmd = ["nice", "-n", "15", "flac", "-s", "-f", "-5", "--delete-input-file", "-o", str(target)]
-            for tag, key in (("TITLE", "title"), ("ARTIST", "artist"), ("ALBUM", "album")):
-                if meta.get(key):
-                    cmd += ["-T", f"{tag}={meta[key]}"]
-            cmd += ["-T", f"TRACKNUMBER={track.number}", str(track.path)]
+            tags = {
+                "TITLE": title, "ARTIST": meta.get("artist"), "ALBUMARTIST": meta.get("artist"),
+                "ALBUM": meta.get("album"), "DATE": meta.get("year"), "GENRE": meta.get("genre"),
+                "TRACKNUMBER": str(number),
+            }
+            for tag, value in tags.items():
+                if value:
+                    cmd += ["-T", f"{tag}={value}"]
+            if cover is not None:
+                cmd.append(f"--picture={cover}")
+            cmd.append(str(track.path))
             proc = await asyncio.create_subprocess_exec(
                 *cmd, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.PIPE)
             _, err = await proc.communicate()
             if proc.returncode != 0:
                 logger.warning("FLAC conversion failed (%s); keeping WAV", err.decode(errors="replace").strip())
-                target = track.path.with_name(stem + ".wav")
-                await asyncio.to_thread(os.replace, track.path, target)
+                target = album_dir / (stem + ".wav")
+                await asyncio.to_thread(shutil.move, str(track.path), str(target))
         else:
-            target = track.path.with_name(stem + ".wav")
-            await asyncio.to_thread(os.replace, track.path, target)
-        self.finished.append(target.name)
-        logger.info("Saved %s", target)
+            target = album_dir / (stem + ".wav")
+            await asyncio.to_thread(shutil.move, str(track.path), str(target))
+        rel = target.relative_to(self.base_dir)
+        self.finished.append(str(rel))
+        logger.info("Saved %s", rel)
+
+    async def _cleanup_tmp(self, tmp: Path | None) -> None:
+        """Remove the hidden session folder once all tracks are finalised."""
+        if tmp is None:
+            return
+        while any(not j.done() for j in self._jobs if j is not asyncio.current_task()):
+            await asyncio.sleep(1)
+        await asyncio.to_thread(shutil.rmtree, tmp, True)
 
     def status(self) -> dict[str, Any]:
         ok, reason = self.target_ready()
@@ -255,7 +326,7 @@ class Recorder:
             "target": str(self.base_dir),
             "target_ready": ok,
             "target_status": reason,
-            "session": self.session_dir.name if self.session_dir else None,
+            "session": self.session_name if self.session_dir else None,
             "elapsed_s": int(time.time() - self.started) if self.started else 0,
             "track": self.track.number if self.track else None,
             "track_title": (self.track.meta.get("title") if self.track else None),
