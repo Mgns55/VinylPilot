@@ -4,6 +4,12 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 
 ## [Unreleased]
 
+## [0.2.2] – 2026-11-24
+### Changed
+- FLAC files are encoded in the hidden temp folder and moved into the album folder in one step, so Navidrome and other library scanners never pick up half-written files.
+- `.vinylpilot-tmp` gets a `.ndignore` file.
+- Unrecognised tracks are tagged `Unbekannt` / `Vinyl YYYY-MM-DD` so a day's unknown tracks show up as one album.
+
 ## [0.2.1] - 2026-11-24
 ### Changed
 - 'Alle Alben aufzeichnen' is now a permanent setting (switch in Digitalisieren and Einstellungen):

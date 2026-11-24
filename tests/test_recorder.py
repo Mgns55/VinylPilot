@@ -35,7 +35,8 @@ async def test_splits_tracks_and_names_from_recognition(tmp_path, monkeypatch):
     assert files[:2] == ["Massive Attack/Mezzanine/01 - Teardrop.wav",
                          "Massive Attack/Mezzanine/02 - Inertia Creeps.wav"], files
     assert files[2].startswith("Unbekannt/Vinyl ") and files[2].endswith("/01 - Track 01.wav"), files
-    assert not (tmp_path / ".vinylpilot-tmp").exists() or not any((tmp_path / ".vinylpilot-tmp").iterdir())
+    leftovers = [p.name for p in (tmp_path / ".vinylpilot-tmp").iterdir()]
+    assert leftovers == [".ndignore"], leftovers
 
 
 async def test_refuses_without_mounted_share(tmp_path):
@@ -111,3 +112,30 @@ async def test_continuous_mode_survives_long_pauses(tmp_path, monkeypatch):
     assert rec.active
     rec.stop()
     await _settle(rec)
+
+
+import shutil
+import subprocess
+
+import pytest
+
+
+@pytest.mark.skipif(not shutil.which("flac"), reason="flac not installed")
+async def test_flac_appears_atomically_with_tags(tmp_path, monkeypatch):
+    rec = Recorder(tmp_path, 48000, 0.02, min_keep_s=0.1, fmt="flac")
+    monkeypatch.setattr(rec, "target_ready", lambda: (True, "ready"))
+    rec.start()
+    for _ in range(15):
+        rec.feed(CHUNK, -30.0, True)
+    rec.stop()
+    for _ in range(100):
+        await asyncio.sleep(0.05)
+        if rec.finished:
+            break
+    out = tmp_path / rec.finished[0]
+    assert out.suffix == ".flac" and out.parent.parent.name == "Unbekannt"
+    assert not list(out.parent.glob("*.wav"))
+    if shutil.which("metaflac"):
+        tags = subprocess.run(["metaflac", "--export-tags-to=-", str(out)],
+                              capture_output=True, text=True).stdout
+        assert "ARTIST=Unbekannt" in tags and f"ALBUM={out.parent.name}" in tags

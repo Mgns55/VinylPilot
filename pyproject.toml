@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "vinylpilot"
-version = "0.2.1"
+version = "0.2.2"
 description = "USB turntable streamer for Music Assistant (Sendspin source) and Home Assistant"
 readme = "README.md"
 license = "Apache-2.0"

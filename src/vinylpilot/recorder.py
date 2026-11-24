@@ -161,6 +161,10 @@ class Recorder:
         self.session_name = datetime.now().strftime("Vinyl %Y-%m-%d %H-%M")
         self.session_dir = self.base_dir / ".vinylpilot-tmp" / self.session_name
         self.session_dir.mkdir(parents=True, exist_ok=True)
+        try:  # Navidrome skips folders containing .ndignore (hidden folders too, but be explicit)
+            (self.session_dir.parent / ".ndignore").touch(exist_ok=True)
+        except OSError:
+            pass
         self._album_numbers = {}
         self.started = time.time()
         self._count = 0
@@ -363,12 +367,22 @@ class Recorder:
         cover = await self._fetch_cover(meta.get("cover", ""), album_dir) if title else None
         if self.fmt == "flac" and shutil.which("flac"):
             target = album_dir / (stem + ".flac")
-            cmd = ["nice", "-n", "15", "flac", "-s", "-f", "-5", "--delete-input-file", "-o", str(target)]
-            tags = {
-                "TITLE": title, "ARTIST": meta.get("artist"), "ALBUMARTIST": meta.get("artist"),
-                "ALBUM": meta.get("album"), "DATE": meta.get("year"), "GENRE": meta.get("genre"),
-                "TRACKNUMBER": str(number),
-            }
+            # Encode inside the hidden temp folder and move the finished file in one
+            # rename, so library scanners (Navidrome, Plex …) never see a half-written FLAC.
+            part = track.path.with_suffix(".flac")
+            cmd = ["nice", "-n", "15", "flac", "-s", "-f", "-5", "--delete-input-file", "-o", str(part)]
+            if title:
+                tags = {
+                    "TITLE": title, "ARTIST": meta.get("artist"), "ALBUMARTIST": meta.get("artist"),
+                    "ALBUM": meta.get("album"), "DATE": meta.get("year"), "GENRE": meta.get("genre"),
+                    "TRACKNUMBER": str(number),
+                }
+            else:
+                # Unrecognised: keep a day's unknown tracks together as one album.
+                tags = {
+                    "TITLE": f"Track {number:02d}", "ARTIST": "Unbekannt", "ALBUMARTIST": "Unbekannt",
+                    "ALBUM": album_dir.name, "TRACKNUMBER": str(number),
+                }
             for tag, value in tags.items():
                 if value:
                     cmd += ["-T", f"{tag}={value}"]
@@ -382,6 +396,8 @@ class Recorder:
                 logger.warning("FLAC conversion failed (%s); keeping WAV", err.decode(errors="replace").strip())
                 target = album_dir / (stem + ".wav")
                 await asyncio.to_thread(shutil.move, str(track.path), str(target))
+            else:
+                await asyncio.to_thread(shutil.move, str(part), str(target))
         else:
             target = album_dir / (stem + ".wav")
             await asyncio.to_thread(shutil.move, str(track.path), str(target))
