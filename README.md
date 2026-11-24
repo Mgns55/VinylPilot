@@ -29,6 +29,9 @@ USB turntable ──USB──▶ Raspberry Pi (VinylPilot) ──Sendspin source
 - Streams lossless PCM (default 48 kHz / 16-bit) via the [Sendspin](https://github.com/Sendspin/spec) source role
 - Detects when a record is playing and reports the signal, so Music Assistant can autostart playback
 - Runs headless on Raspberry Pi OS Lite; target hardware is a Raspberry Pi Zero 2 W
+- Web interface at http://vinylpilot.local: live VU meters, now playing, stylus hours, digitising to a NAS,
+  settings, diagnostics and one-click updates ([docs/web-interface.md](docs/web-interface.md))
+- Home Assistant via MQTT Discovery, optional track recognition ([docs/home-assistant.md](docs/home-assistant.md))
 
 Details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 

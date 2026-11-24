@@ -13,12 +13,16 @@ python3 -c 'import sys; sys.exit(sys.version_info < (3, 12))' \
   || { echo "Python 3.12+ required (Raspberry Pi OS Trixie)." >&2; exit 1; }
 
 echo "==> Packages"
-PKGS=(git python3-venv alsa-utils)
+PKGS=(git python3-venv alsa-utils flac polkitd)
 MISSING=()
 for p in "${PKGS[@]}"; do dpkg -s "$p" >/dev/null 2>&1 || MISSING+=("$p"); done
 if (( ${#MISSING[@]} )); then
+  # A masked PackageKit makes apt's hooks fail; unmask it for the duration of apt.
+  PK_MASKED=0
+  [[ "$(systemctl is-enabled packagekit 2>/dev/null)" == masked ]] && PK_MASKED=1 && systemctl unmask packagekit >/dev/null
   apt-get update -qq || echo "warning: apt-get update reported errors, continuing"
   apt-get install -y -qq "${MISSING[@]}" >/dev/null
+  (( PK_MASKED )) && systemctl mask packagekit >/dev/null
 else
   echo "    already installed"
 fi
@@ -36,9 +40,8 @@ fi
 echo "==> Python environment (first run on a Zero 2 W takes a few minutes)"
 [[ -x "$PREFIX/.venv/bin/python" ]] || python3 -m venv "$PREFIX/.venv"
 "$PREFIX/.venv/bin/pip" install -q --upgrade pip
-EXTRAS=""
-grep -q -- "--recognize shazam" /etc/default/vinylpilot 2>/dev/null && EXTRAS="[shazam]"
-"$PREFIX/.venv/bin/pip" install -q "$PREFIX$EXTRAS"
+# Shazam support is installed always; it is only loaded while a lookup runs.
+"$PREFIX/.venv/bin/pip" install -q "$PREFIX[shazam]"
 
 echo "==> Config"
 [[ -f /etc/default/vinylpilot ]] || cat > /etc/default/vinylpilot <<'CONF'
@@ -53,14 +56,22 @@ install -d -m 0700 /etc/vinylpilot
 VINYLPILOT_MQTT_PASSWORD=
 CONF
 
+[[ -f /etc/vinylpilot/web.env ]] || install -m 0600 /dev/stdin /etc/vinylpilot/web.env <<'CONF'
+# Optional password for the web interface (user name: anything). Empty = no password.
+VINYLPILOT_WEB_PASSWORD=
+CONF
+mkdir -p /mnt/vinylpilot
+
 echo "==> Keep logs in RAM (no SD card writes)"
 mkdir -p /etc/systemd/journald.conf.d
-cat > /etc/systemd/journald.conf.d/vinylpilot.conf <<'CONF'
+if [[ ! -f /etc/systemd/journald.conf.d/vinylpilot.conf ]]; then  # keep a manual switch to persistent
+  cat > /etc/systemd/journald.conf.d/vinylpilot.conf <<'CONF'
 [Journal]
 Storage=volatile
 RuntimeMaxUse=16M
 CONF
-systemctl restart systemd-journald
+  systemctl restart systemd-journald
+fi
 
 echo "==> Wi-Fi power saving off (prevents audio dropouts)"
 if [[ -d /etc/NetworkManager/conf.d ]]; then
@@ -81,13 +92,18 @@ RuntimeWatchdogSec=15s
 CONF
 systemctl daemon-reexec
 
-echo "==> systemd service"
+echo "==> systemd services"
 install -m 0644 "$PREFIX/deploy/vinylpilot.service" /etc/systemd/system/vinylpilot.service
+install -m 0644 "$PREFIX/deploy/vinylpilot-web.service" /etc/systemd/system/vinylpilot-web.service
+install -m 0644 "$PREFIX/deploy/vinylpilot-update.service" /etc/systemd/system/vinylpilot-update.service
+install -d /etc/polkit-1/rules.d
+install -m 0644 "$PREFIX/deploy/50-vinylpilot.rules" /etc/polkit-1/rules.d/50-vinylpilot.rules
 systemctl daemon-reload
-systemctl enable --now "$SERVICE"
-systemctl enable --now vinylpilot-netwatch.timer
+systemctl enable --now "$SERVICE" vinylpilot-web.service vinylpilot-netwatch.timer
 systemctl restart "$SERVICE"
+systemctl restart vinylpilot-web.service
 
 echo
-echo "VinylPilot is running. Follow the log (pairing code appears here):"
+echo "VinylPilot is running. Web interface: http://$(hostname).local"
+echo "Follow the log (pairing code appears here):"
 echo "  journalctl -u $SERVICE -f"

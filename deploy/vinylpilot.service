@@ -27,6 +27,8 @@ NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=yes
 PrivateTmp=yes
+# recordings (Synology share mounted by scripts/setup-nas.sh); '-' = may not exist
+ReadWritePaths=-/mnt/vinylpilot
 
 [Install]
 WantedBy=multi-user.target

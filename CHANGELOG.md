@@ -12,6 +12,12 @@ All notable changes to this project are documented here. Format: [Keep a Changel
   turntable is off; capture finds the USB device on its own
 
 ### Added
+- Web interface on port 80 (separate service): dashboard with live VU meters and waveform,
+  now playing, stylus hours, digitising to a Synology share, settings, diagnostics, logs,
+  one-click update (polkit-restricted), optional password
+- Digitising: per-track files split at pauses, Shazam naming/tags, FLAC conversion, NAS setup script
+- Stylus hour counter (web + MQTT sensor and reset button)
+- Runtime settings (threshold, hold, gap, Shazam, stylus life, format) saved on the Pi
 - Network watchdog (Wi-Fi toggle → driver reload → reboot) and hardware watchdog for the Zero 2 W
 - Optional track recognition via the unofficial Shazam API (`--recognize shazam`): Now playing
   sensor and cover image in Home Assistant; lookups at record start, after track gaps, every 3 min

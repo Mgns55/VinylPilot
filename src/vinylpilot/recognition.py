@@ -100,7 +100,8 @@ class TrackRecognizer:
         ):
             self._due = None
             self._last_lookup = now
-            self._task = asyncio.get_running_loop().create_task(self._lookup(self._wav()))
+            sampled_from = time.time() - len(self._buf) * self.chunk_s
+            self._task = asyncio.get_running_loop().create_task(self._lookup(self._wav(), sampled_from))
 
     # ---- internals ----------------------------------------------------------
 
@@ -118,7 +119,16 @@ class TrackRecognizer:
             w.writeframes(b"".join(self._buf))
         return out.getvalue()
 
-    async def _lookup(self, wav: bytes) -> None:
+    def reset(self) -> None:
+        """Forget the current track (e.g. recognition switched off)."""
+        self._playing = False
+        self._due = None
+        self._buf.clear()
+        if self.current is not None:
+            self.current = None
+            self.on_result(None)
+
+    async def _lookup(self, wav: bytes, sampled_from: float) -> None:
         try:
             proc = await asyncio.create_subprocess_exec(
                 *self.worker_cmd,
@@ -152,8 +162,11 @@ class TrackRecognizer:
             return
         self._misses = 0
         if self.current and self.current.get("key") == result.get("key"):
+            self.current["sampled_from"] = sampled_from
+            self.on_result(self.current)
             return
         result["recognized_at"] = int(time.time())
+        result["sampled_from"] = sampled_from
         self.current = result
         logger.info("Now playing: %s – %s", result.get("artist"), result.get("title"))
         self.on_result(result)

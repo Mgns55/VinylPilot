@@ -70,7 +70,12 @@ class MqttPublisher:
         name: str,
         on_threshold: Callable[[float], None],
         on_hold: Callable[[float], None],
+        on_stylus_reset: Callable[[], Any] | None = None,
+        stylus_hours: Callable[[], float] | None = None,
     ) -> None:
+        self._on_stylus_reset = on_stylus_reset
+        self._stylus_hours = stylus_hours
+        self.connected = False
         self.s = settings
         self.status = status
         self.name = name
@@ -120,6 +125,12 @@ class MqttPublisher:
               device_class="signal_strength", state_class="measurement", **diag),
             s("boot_time", "Last boot", sysst, device_class="timestamp", **diag),
             s("version", "Version", sysst, **diag),
+            s("stylus_hours", "Stylus hours", sysst, unit_of_measurement="h",
+              device_class="duration", state_class="total_increasing", icon="mdi:record-player",
+              suggested_display_precision=1),
+            ("button", "stylus_reset", {
+                "name": "Reset stylus hours", "command_topic": f"{self.base}/set/stylus_reset",
+                "payload_press": "1", "entity_category": "config", "icon": "mdi:restore"}),
             ("sensor", "now_playing", {
                 "name": "Now playing", "state_topic": f"{self.base}/now_playing",
                 "value_template": "{{ (value_json.artist ~ ' – ' ~ value_json.title) if value_json.title else 'None' }}",
@@ -173,6 +184,7 @@ class MqttPublisher:
             "wifi_rssi": system.wifi_rssi(),
             "boot_time": datetime.fromtimestamp(boot, UTC).isoformat(timespec="seconds") if boot else None,
             "version": __version__,
+            "stylus_hours": self._stylus_hours() if self._stylus_hours else None,
         }
 
     async def _publish_loop(self, client: aiomqtt.Client) -> None:
@@ -210,6 +222,11 @@ class MqttPublisher:
         await client.subscribe(f"{self.base}/set/#")
         async for message in client.messages:
             topic = str(message.topic)
+            if topic.endswith("/stylus_reset"):
+                if self._on_stylus_reset:
+                    self._on_stylus_reset()
+                self.status.changed.set()
+                continue
             try:
                 value = float(message.payload.decode())  # type: ignore[union-attr]
             except (ValueError, AttributeError):
@@ -231,6 +248,7 @@ class MqttPublisher:
                     identifier=f"vinylpilot-{self.node}", will=will, keepalive=30,
                 ) as client:
                     logger.info("MQTT connected to %s:%d", self.s.host, self.s.port)
+                    self.connected = True
                     backoff = 1.0
                     await self._publish_discovery(client)
                     await client.publish(self.avail, "online", qos=1, retain=True)
@@ -247,8 +265,10 @@ class MqttPublisher:
                         except Exception:  # noqa: BLE001
                             pass
             except asyncio.CancelledError:
+                self.connected = False
                 raise
             except Exception as err:  # noqa: BLE001
+                self.connected = False
                 logger.warning("MQTT unavailable (%s); retrying in %.0f s", err, backoff)
                 await asyncio.sleep(backoff)
                 backoff = min(backoff * 2, 60.0)

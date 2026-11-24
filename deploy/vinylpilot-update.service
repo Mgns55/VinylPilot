@@ -1,0 +1,7 @@
+[Unit]
+Description=VinylPilot update (started from the web interface)
+
+[Service]
+Type=oneshot
+ExecStart=/opt/vinylpilot/scripts/install.sh
+TimeoutStartSec=30min

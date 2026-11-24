@@ -1,0 +1,28 @@
+[Unit]
+Description=VinylPilot web interface (http://vinylpilot.local)
+Documentation=https://github.com/Mgns55/VinylPilot
+After=network-online.target vinylpilot.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=vinylpilot
+# journal access for the log view
+SupplementaryGroups=systemd-journal
+EnvironmentFile=-/etc/vinylpilot/web.env
+ExecStart=/opt/vinylpilot/.venv/bin/vinylpilot-web --port 80
+Environment=PYTHONUNBUFFERED=1
+RuntimeDirectory=vinylpilot-web
+Environment=HOME=/run/vinylpilot-web
+Restart=always
+RestartSec=5
+TimeoutStopSec=10
+# port 80 without root
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+Nice=5
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

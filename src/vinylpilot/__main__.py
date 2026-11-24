@@ -9,6 +9,7 @@ import json
 import logging
 import os
 import signal
+import time
 from pathlib import Path
 
 from aiosendspin.models.types import AudioCodec
@@ -16,8 +17,15 @@ from aiosendspin.models.types import AudioCodec
 from . import __version__
 from .capture import ArecordCapture
 from .devices import list_usb_capture_devices, resolve_device
+from . import settings as settings_mod
+from . import system
+from .api import API_PORT, CoreApi, LiveLevels
 from .levels import LevelMeter, SignalDetector
 from .mqtt import MqttPublisher, MqttSettings, Status
+from .recognition import TrackRecognizer
+from .recorder import Recorder
+from .settings import RECORDINGS_DIR
+from .stylus import StylusCounter
 from .sendspin_source import LISTEN_PORT, SendspinSource
 
 logger = logging.getLogger("vinylpilot")
@@ -49,6 +57,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                    help="identify the playing track (shazam: unofficial API, needs internet)")
     p.add_argument("--gap-threshold", type=float, default=-55.0,
                    help="level below which a pause between tracks is assumed (default: -55 dBFS)")
+    p.add_argument("--recordings-dir", type=Path, default=RECORDINGS_DIR,
+                   help=f"mounted network share for recordings (default: {RECORDINGS_DIR})")
+    p.add_argument("--api-port", type=int, default=API_PORT, help="local control API port (127.0.0.1)")
     p.add_argument("--show-levels", action="store_true", help="log input levels once per second")
     p.add_argument("--list-devices", action="store_true", help="list USB capture devices and exit")
     p.add_argument("--state-dir", type=Path, default=_default_state_dir(), help="where identity and pairing are stored")
@@ -67,18 +78,22 @@ async def run(args: argparse.Namespace) -> None:
             return None
 
     device = args.device
-    label = "auto-detect" if args.device == "auto" else args.device
-    logger.info("VinylPilot %s — input: %s (%s)", __version__, label, device)
+    logger.info("VinylPilot %s — input: %s", __version__, device)
+    started_at = time.time()
 
     settings_file = args.state_dir / "settings.json"
-    saved = _load_settings(settings_file)
-    threshold = saved.get("threshold_db", args.threshold)
-    hold = saved.get("hold_s", args.hold)
+    cfg = settings_mod.load(settings_file, settings_mod.Settings(
+        threshold_db=args.threshold, hold_s=args.hold, gap_db=args.gap_threshold,
+        recognize=args.recognize == "shazam"))
+    stylus = StylusCounter(args.state_dir / "stylus.json")
 
     capture = ArecordCapture(device, args.rate, resolve=resolve if args.device == "auto" else None)
     meter = LevelMeter(window_chunks=max(1, int(0.5 / capture.chunk_s)))  # 0.5 s window
-    detector = SignalDetector(threshold, args.activation, hold)
-    status = Status(turntable_name=label, threshold_db=threshold, hold_s=hold)
+    detector = SignalDetector(cfg.threshold_db, args.activation, cfg.hold_s)
+    status = Status(turntable_name="", threshold_db=cfg.threshold_db, hold_s=cfg.hold_s)
+    live = LiveLevels()
+    recorder = Recorder(args.recordings_dir, args.rate, capture.chunk_s,
+                        gap_db=cfg.gap_db, fmt=cfg.recording_format)
     source = SendspinSource(
         name=args.name,
         state_dir=args.state_dir,
@@ -89,29 +104,83 @@ async def run(args: argparse.Namespace) -> None:
     )
     await source.start()
 
-    recognizer = None
-    if args.recognize == "shazam":
-        from .recognition import TrackRecognizer
+    def on_track(track: dict | None) -> None:
+        status.now_playing = track
+        recorder.set_track_meta(track)
+        status.changed.set()
 
-        def on_track(track: dict | None) -> None:
-            status.now_playing = track
-            status.changed.set()
-
-        recognizer = TrackRecognizer(args.rate, capture.chunk_s, on_track, gap_db=args.gap_threshold)
+    recognizer = TrackRecognizer(args.rate, capture.chunk_s, on_track, gap_db=cfg.gap_db)
+    if cfg.recognize:
         logger.info("Track recognition enabled (Shazam)")
 
+    def apply_settings(data: dict) -> dict:
+        changed = cfg.update(data)
+        detector.threshold_db = status.threshold_db = cfg.threshold_db
+        detector.hold_s = status.hold_s = cfg.hold_s
+        recognizer.gap_db = recorder.gap_db = cfg.gap_db
+        recorder.fmt = cfg.recording_format
+        if "recognize" in changed and not cfg.recognize:
+            recognizer.reset()
+        if changed:
+            settings_mod.save(settings_file, cfg)
+            logger.info("Settings changed: %s", ", ".join(changed))
+            status.changed.set()
+        return {"changed": changed, "settings": cfg.to_dict()}
+
+    def reset_stylus(_data: dict) -> dict:
+        stylus.reset()
+        status.changed.set()
+        return {}
+
+    def start_recording(_data: dict) -> dict:
+        recorder.start()
+        return {"recording": recorder.status()}
+
+    def stop_recording(_data: dict) -> dict:
+        recorder.stop()
+        return {"recording": recorder.status()}
+
+    def get_status() -> dict:
+        boot = system.boot_time()
+        return {
+            "version": __version__,
+            "name": args.name,
+            "started_at": started_at,
+            "turntable": {"connected": capture.running, "device": capture.device,
+                          "name": status.turntable_name},
+            "format": {"sample_rate": args.rate, "bit_depth": 16, "channels": 2, "codec": args.codec},
+            "record_playing": detector.present,
+            "streaming": source.streaming,
+            "music_assistant": source.connected,
+            "mqtt": {"enabled": bool(args.mqtt_host), "host": args.mqtt_host,
+                     "connected": publisher.connected if publisher else False},
+            "levels": {"rms": [status.level_left, status.level_right]},
+            "now_playing": status.now_playing,
+            "settings": cfg.to_dict(),
+            "stylus": {"hours": round(stylus.hours, 2), "life_h": cfg.stylus_life_h, "since": stylus.since},
+            "recording": recorder.status(),
+            "system": {
+                "cpu": cpu.percent(), "memory": system.memory_used_percent(),
+                "process_memory": system.process_rss_mb(), "temperature": system.cpu_temperature(),
+                "wifi_rssi": system.wifi_rssi(), "boot_time": boot,
+            },
+        }
+
+    cpu = system.CpuMeter()
     tasks: list[asyncio.Task[None]] = []
+    publisher: MqttPublisher | None = None
+    api = CoreApi(get_status, {
+        "settings": apply_settings,
+        "stylus_reset": reset_stylus,
+        "record_start": start_recording,
+        "record_stop": stop_recording,
+    }, live, port=args.api_port)
+    try:
+        await api.start()
+    except OSError as err:
+        logger.warning("Control API unavailable: %s", err)
+
     if args.mqtt_host:
-        def set_threshold(value: float) -> None:
-            detector.threshold_db = status.threshold_db = value
-            _save_settings(settings_file, {"threshold_db": value, "hold_s": detector.hold_s})
-            logger.info("Threshold set to %.0f dBFS via MQTT", value)
-
-        def set_hold(value: float) -> None:
-            detector.hold_s = status.hold_s = value
-            _save_settings(settings_file, {"threshold_db": detector.threshold_db, "hold_s": value})
-            logger.info("Hold set to %.0f s via MQTT", value)
-
         publisher = MqttPublisher(
             MqttSettings(
                 host=args.mqtt_host,
@@ -121,8 +190,10 @@ async def run(args: argparse.Namespace) -> None:
             ),
             status,
             name=args.name,
-            on_threshold=set_threshold,
-            on_hold=set_hold,
+            on_threshold=lambda v: apply_settings({"threshold_db": v}),
+            on_hold=lambda v: apply_settings({"hold_s": v}),
+            on_stylus_reset=lambda: reset_stylus({}),
+            stylus_hours=lambda: round(stylus.hours, 2),
         )
         tasks.append(asyncio.create_task(publisher.run()))
 
@@ -136,9 +207,14 @@ async def run(args: argparse.Namespace) -> None:
                 if detector.reset():
                     logger.info("Record stopped (input lost)")
                     await source.set_signal(False)
+                recorder.feed(b"", -120.0, False)
+                if cfg.recognize:
+                    recognizer.feed(b"", -120.0, False)
                 status.turntable_connected = status.record_playing = False
                 status.changed.set()
                 continue
+            if not status.turntable_name:
+                status.turntable_name = _card_name(capture.device)
             now_us = source.now_us()
             # The chunk's first sample was captured roughly one chunk ago.
             ts = now_us - chunk_us if now_us is not None else None
@@ -150,8 +226,12 @@ async def run(args: argparse.Namespace) -> None:
                 await source.feed(pcm, ts)
             except Exception:  # noqa: BLE001 - capture and detection keep running
                 logger.exception("Unexpected error while streaming; continuing")
-            if recognizer is not None:
+            if detector.present:
+                stylus.add(capture.chunk_s)
+            if cfg.recognize:
                 recognizer.feed(pcm, meter.window_rms_db, detector.present)
+            recorder.feed(pcm, meter.window_rms_db, detector.present)
+            live.feed(pcm, (levels.rms_left, levels.rms_right), (levels.peak_left, levels.peak_right))
             _update_status(status, capture, source, detector, levels)
             if args.show_levels and loop.time() - last_report >= 1.0:
                 last_report = loop.time()
@@ -164,19 +244,28 @@ async def run(args: argparse.Namespace) -> None:
                 )
     finally:
         # Shut down quickly: every step is bounded so systemd never has to SIGKILL us.
-        if recognizer is not None:
-            recognizer.close()
+        stylus.save()
+        recorder.stop()
+        recognizer.close()
         for task in tasks:
             task.cancel()
         try:
             await asyncio.wait_for(asyncio.gather(*tasks, return_exceptions=True), 3)
         except TimeoutError:
             logger.warning("MQTT did not stop in time")
-        try:
-            await asyncio.wait_for(source.stop(), 3)
-        except (TimeoutError, Exception) as err:  # noqa: BLE001
-            logger.warning("Sendspin did not stop cleanly: %s", err or "timeout")
+        for name, coro in (("API", api.stop()), ("Sendspin", source.stop())):
+            try:
+                await asyncio.wait_for(coro, 3)
+            except (TimeoutError, Exception) as err:  # noqa: BLE001
+                logger.warning("%s did not stop cleanly: %s", name, err or "timeout")
         logger.info("Stopped")
+
+
+def _card_name(device: str) -> str:
+    for d in list_usb_capture_devices():
+        if d.alsa_name == device or device.endswith(d.card_id):
+            return d.name
+    return device
 
 
 def _update_status(status: Status, capture, source, detector, levels) -> None:  # noqa: ANN001
@@ -187,22 +276,6 @@ def _update_status(status: Status, capture, source, detector, levels) -> None:  
         (status.turntable_connected, status.record_playing,
          status.streaming, status.server_connected) = new
         status.changed.set()
-
-
-def _load_settings(path: Path) -> dict[str, float]:
-    try:
-        data = json.loads(path.read_text())
-        return {k: float(v) for k, v in data.items() if k in ("threshold_db", "hold_s")}
-    except (OSError, ValueError, AttributeError):
-        return {}
-
-
-def _save_settings(path: Path, data: dict[str, float]) -> None:
-    try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(data))
-    except OSError as err:
-        logger.warning("Could not save settings: %s", err)
 
 
 def main(argv: list[str] | None = None) -> None:
