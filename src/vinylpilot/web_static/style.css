@@ -166,3 +166,5 @@ body.playing .logo .vp-play { animation: vp-pulse 1.8s ease-in-out infinite; }
 #up-remaining { font-size: 34px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .cd-label { color: var(--muted); }
 .countdown .progress div { transition: width 1s linear; }
+
+.auto-switch { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); }

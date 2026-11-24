@@ -99,3 +99,15 @@ async def test_album_mode_ends_after_long_silence(tmp_path, monkeypatch):
         rec.feed(CHUNK, -90.0, False)
     assert not rec.active and rec.stop_reason == "album_done"
     await _settle(rec)
+
+
+async def test_continuous_mode_survives_long_pauses(tmp_path, monkeypatch):
+    rec = Recorder(tmp_path, 48000, 0.02, min_keep_s=0.1, fmt="wav", auto_stop_silence_s=0.2)
+    monkeypatch.setattr(rec, "target_ready", lambda: (True, "ready"))
+    rec.start("all", continuous=True)
+    _play(rec)
+    for _ in range(50):                      # 1 s of silence, far beyond auto_stop_silence_s
+        rec.feed(CHUNK, -90.0, False)
+    assert rec.active
+    rec.stop()
+    await _settle(rec)

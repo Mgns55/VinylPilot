@@ -109,6 +109,7 @@ class Recorder:
         self.auto_stop_silence_s = auto_stop_silence_s
         self.album_end_silence_s = album_end_silence_s
         self.mode = "all"
+        self.continuous = False
         self.target_album: tuple[str, str] | None = None
         self.target_album_name: str | None = None
         self.skipped: list[str] = []
@@ -145,8 +146,11 @@ class Recorder:
             return False, "read_only"
         return True, "ready"
 
-    def start(self, mode: str = "all") -> None:
-        """mode 'album': stop after the next album; 'all': keep going until stopped."""
+    def start(self, mode: str = "all", continuous: bool = False) -> None:
+        """mode 'album': stop after the next album; 'all': keep going until stopped.
+
+        ``continuous`` (the permanent 'record everything' setting) never stops on silence.
+        """
         if self.active:
             return
         if mode not in ("album", "all"):
@@ -164,6 +168,7 @@ class Recorder:
         self.skipped = []
         self.error = None
         self.mode = mode
+        self.continuous = continuous and mode == "all"
         self.target_album = None
         self.target_album_name = None
         self.stop_reason = None
@@ -219,7 +224,7 @@ class Recorder:
             if self.mode == "album" and self._count and self._silent_s >= self.album_end_silence_s:
                 logger.info("Album finished (%d min without music)", self.album_end_silence_s // 60)
                 self.stop("album_done")
-            elif self._silent_s >= self.auto_stop_silence_s:
+            elif not self.continuous and self._silent_s >= self.auto_stop_silence_s:
                 logger.info("Recording stopped after %d min without music", self.auto_stop_silence_s // 60)
                 self.stop("silence")
             return
@@ -280,7 +285,7 @@ class Recorder:
         'Aftermath (Remastered)' and 'Aftermath' end up in the same place.
         """
         if not (meta.get("artist") and meta.get("album")):
-            return self.base_dir / "Unbekannt" / (self.session_name or "Vinyl")
+            return self.base_dir / "Unbekannt" / datetime.now().strftime("Vinyl %Y-%m-%d")
         artist_dir = self.base_dir / _safe(meta["artist"])
         if artist_dir.is_dir():
             for d in artist_dir.iterdir():
@@ -406,6 +411,7 @@ class Recorder:
             "finished": self.finished[-20:],
             "skipped": self.skipped[-20:],
             "mode": self.mode,
+            "continuous": self.continuous,
             "album": self.target_album_name,
             "stop_reason": self.stop_reason,
             "error": self.error,

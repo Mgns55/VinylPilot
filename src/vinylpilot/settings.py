@@ -20,6 +20,7 @@ class Settings:
     hold_s: float = 10.0
     gap_db: float = -55.0
     recognize: bool = False
+    auto_record: bool = False  # digitise every record, permanently (survives pauses and restarts)
     stylus_life_h: float = 800.0
     recording_format: str = "flac"  # flac | wav
 
@@ -37,7 +38,7 @@ class Settings:
             if f.name not in data:
                 continue
             value = data[f.name]
-            if f.name == "recognize":
+            if f.name in ("recognize", "auto_record"):
                 value = bool(value)
             elif f.name == "recording_format":
                 if value not in ("flac", "wav"):

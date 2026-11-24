@@ -121,6 +121,13 @@ async def run(args: argparse.Namespace) -> None:
         recorder.fmt = cfg.recording_format
         if "recognize" in changed and not cfg.recognize:
             recognizer.reset()
+        if "auto_record" in changed:
+            if cfg.auto_record:
+                if recorder.active and not recorder.continuous:
+                    recorder.stop("switched_to_auto")
+                ensure_auto_recording(force_log=True)
+            elif recorder.active and recorder.continuous:
+                recorder.stop("auto_off")
         if changed:
             settings_mod.save(settings_file, cfg)
             logger.info("Settings changed: %s", ", ".join(changed))
@@ -132,12 +139,31 @@ async def run(args: argparse.Namespace) -> None:
         status.changed.set()
         return {}
 
+    auto_state = {"warned": False}
+
+    def ensure_auto_recording(force_log: bool = False) -> None:
+        """Keep the permanent recording armed (also after restarts and NAS outages)."""
+        if not cfg.auto_record or recorder.active:
+            return
+        try:
+            recorder.start("all", continuous=True)
+            auto_state["warned"] = False
+        except (RuntimeError, OSError) as err:
+            if force_log or not auto_state["warned"]:
+                logger.warning("Automatic recording waiting for the network share: %s", err)
+                auto_state["warned"] = True
+
     def start_recording(data: dict) -> dict:
+        if cfg.auto_record:
+            raise RuntimeError("automatic recording is on")
         recorder.start(str(data.get("mode", "all")))
         return {"recording": recorder.status()}
 
     def stop_recording(_data: dict) -> dict:
-        recorder.stop()
+        if cfg.auto_record:
+            apply_settings({"auto_record": False})  # stopping by hand switches the automatic mode off
+        else:
+            recorder.stop()
         return {"recording": recorder.status()}
 
     def get_status() -> dict:
@@ -197,8 +223,10 @@ async def run(args: argparse.Namespace) -> None:
         )
         tasks.append(asyncio.create_task(publisher.run()))
 
+    ensure_auto_recording()
     chunk_us = int(capture.chunk_s * 1_000_000)
     last_report = 0.0
+    last_auto_check = 0.0
     loop = asyncio.get_running_loop()
     try:
         async for pcm in capture.chunks():
@@ -233,6 +261,9 @@ async def run(args: argparse.Namespace) -> None:
             recorder.feed(pcm, meter.window_rms_db, detector.present)
             live.feed(pcm, (levels.rms_left, levels.rms_right), (levels.peak_left, levels.peak_right))
             _update_status(status, capture, source, detector, levels)
+            if cfg.auto_record and not recorder.active and loop.time() - last_auto_check >= 30:
+                last_auto_check = loop.time()
+                ensure_auto_recording()
             if args.show_levels and loop.time() - last_report >= 1.0:
                 last_report = loop.time()
                 logger.info(

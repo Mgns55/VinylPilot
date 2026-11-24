@@ -4,6 +4,12 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-11-24
+### Changed
+- 'Alle Alben aufzeichnen' is now a permanent setting (switch in Digitalisieren and Einstellungen):
+  every record is digitised, also after long pauses, restarts and NAS outages; stopping by hand
+  switches it off. Unrecognised tracks are grouped per day.
+
 ## [0.2.0] - 2026-11-24
 ### Added
 - Digitising modes: 'Nächstes Album aufzeichnen' (stops when another album is recognised or after

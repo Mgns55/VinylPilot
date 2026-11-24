@@ -120,11 +120,13 @@ function render() {
   $("rec-elapsed").textContent = r.active ? duration(r.elapsed_s) : "–";
   $("rec-track").textContent = r.active ? (r.track ? `Lied ${r.track}${r.track_title ? " · " + r.track_title : ""}` : "wartet auf Musik") : "–";
   $("rec-recognize").innerHTML = s.settings.recognize ? "an (Dateien werden benannt)" : `aus <span class="muted">(Dateien heißen „Track 01“ …)</span>`;
-  for (const id of ["rec-album-btn", "rec-all-btn"]) {
-    $(id).classList.toggle("hidden", r.active);
-    $(id).disabled = !r.target_ready;
-  }
-  $("rec-mode").textContent = r.active ? (r.mode === "album" ? "nächstes Album, hält danach an" : "alle Alben") : "–";
+  const auto = s.settings.auto_record;
+  $("rec-album-btn").classList.toggle("hidden", r.active || auto);
+  $("rec-album-btn").disabled = !r.target_ready;
+  if (!$("rec-stop").classList.contains("confirm")) $("rec-stop").textContent = auto ? "Automatik ausschalten" : "Aufnahme beenden";
+  if (document.activeElement !== $("rec-auto")) $("rec-auto").checked = auto;
+  $("rec-mode").textContent = auto ? (r.active ? "automatisch, dauerhaft" : "automatisch – wartet auf die Synology-Freigabe")
+    : r.active ? (r.mode === "album" ? "nächstes Album, hält danach an" : "alle Alben") : "–";
   $("rec-album").textContent = r.album || (r.active && r.mode === "album" ? "wird erkannt …" : "–");
   $("rec-hint").textContent = s.settings.recognize
     ? "„Nächstes Album“ endet, sobald eine andere Platte erkannt wird oder 5 Minuten keine Musik kommt."
@@ -235,7 +237,13 @@ async function startRecording(mode) {
   poll();
 }
 $("rec-album-btn").addEventListener("click", () => startRecording("album"));
-$("rec-all-btn").addEventListener("click", () => startRecording("all"));
+$("rec-auto").addEventListener("change", async (ev) => {
+  try {
+    await post("/api/core/action/settings", { auto_record: ev.target.checked });
+    flash($("rec-msg"), ev.target.checked ? "Automatische Aufzeichnung ist an." : "Automatische Aufzeichnung ist aus.");
+  } catch (e) { flash($("rec-msg"), e.message, false); ev.target.checked = !ev.target.checked; }
+  poll();
+});
 twoStep($("rec-stop"), "Wirklich beenden?", async () => {
   try { await post("/api/core/action/record_stop"); flash($("rec-msg"), "Aufnahme beendet. Die letzten Dateien werden noch umgewandelt."); }
   catch (e) { flash($("rec-msg"), e.message, false); }
