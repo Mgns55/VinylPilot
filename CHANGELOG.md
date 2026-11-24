@@ -3,6 +3,14 @@
 All notable changes to this project are documented here. Format: [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
+
+## [0.2.0] - 2026-11-24
+### Added
+- Digitising modes: 'Nächstes Album aufzeichnen' (stops when another album is recognised or after
+  5 min without music) and 'Alle Alben aufzeichnen'
+- Duplicate check: tracks already digitised (same artist/album/title, also from earlier sessions)
+  are skipped; album folders are matched ignoring case, brackets and remaster notes
+- Version scheme 0.2.x, the patch number increases with every update
 ### Fixed
 - Cover image shows the VinylPilot icon when nothing is recognised instead of an empty URL
   (Home Assistant logged image errors)

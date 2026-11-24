@@ -5,6 +5,7 @@
 const $ = (id) => document.getElementById(id);
 const COVER_FALLBACK = "/static/vinyl.svg";
 let state = null;
+let lastRecActive = false;
 let tab = "overview";
 let ws = null;
 let pollTimer = null;
@@ -111,7 +112,7 @@ function render() {
   // recording
   const r = s.recording;
   $("rec-mini").innerHTML = r.active
-    ? `<span class="good">Aufnahme läuft</span> · ${duration(r.elapsed_s)} · Lied ${r.track ?? "–"}`
+    ? `<span class="good">${r.mode === "album" ? "Album wird aufgezeichnet" : "Aufzeichnung läuft"}</span> · ${duration(r.elapsed_s)}${r.album ? " · " + esc(r.album) : ""}`
     : r.target_ready ? "Bereit. Ziel: " + esc(r.target) : `<span class="badtxt">${esc(targetText(r))}</span>`;
   $("rec-target").textContent = r.target;
   $("rec-state").innerHTML = r.active ? `<span class="good">läuft</span> · ${esc(r.session)}`
@@ -119,8 +120,19 @@ function render() {
   $("rec-elapsed").textContent = r.active ? duration(r.elapsed_s) : "–";
   $("rec-track").textContent = r.active ? (r.track ? `Lied ${r.track}${r.track_title ? " · " + r.track_title : ""}` : "wartet auf Musik") : "–";
   $("rec-recognize").innerHTML = s.settings.recognize ? "an (Dateien werden benannt)" : `aus <span class="muted">(Dateien heißen „Track 01“ …)</span>`;
-  $("rec-start").classList.toggle("hidden", r.active);
-  $("rec-start").disabled = !r.target_ready;
+  for (const id of ["rec-album-btn", "rec-all-btn"]) {
+    $(id).classList.toggle("hidden", r.active);
+    $(id).disabled = !r.target_ready;
+  }
+  $("rec-mode").textContent = r.active ? (r.mode === "album" ? "nächstes Album, hält danach an" : "alle Alben") : "–";
+  $("rec-album").textContent = r.album || (r.active && r.mode === "album" ? "wird erkannt …" : "–");
+  $("rec-hint").textContent = s.settings.recognize
+    ? "„Nächstes Album“ endet, sobald eine andere Platte erkannt wird oder 5 Minuten keine Musik kommt."
+    : "Titelerkennung ist aus: keine Duplikatprüfung, Dateien heißen „Track 01“ …, und „Nächstes Album“ endet erst nach 5 Minuten Pause. Einschalten unter Einstellungen.";
+  if (!r.active && r.stop_reason === "album_done" && lastRecActive) flash($("rec-msg"), "Album fertig digitalisiert.");
+  lastRecActive = r.active;
+  $("rec-skipped-wrap").classList.toggle("hidden", !r.skipped.length);
+  $("rec-skipped").innerHTML = r.skipped.slice().reverse().map((n) => `<li class="muted">${esc(n)}</li>`).join("");
   $("rec-stop").classList.toggle("hidden", !r.active);
   if (r.error) flash($("rec-msg"), r.error, false);
   $("rec-files").innerHTML = r.finished.length
@@ -217,11 +229,13 @@ function twoStep(btn, label, action) {
   });
 }
 twoStep($("stylus-reset"), "Wirklich auf 0 setzen?", async () => { await post("/api/core/action/stylus_reset"); poll(); });
-$("rec-start").addEventListener("click", async () => {
-  try { await post("/api/core/action/record_start"); flash($("rec-msg"), "Aufnahme gestartet. Jetzt die Nadel aufsetzen."); }
+async function startRecording(mode) {
+  try { await post("/api/core/action/record_start", { mode }); flash($("rec-msg"), "Bereit. Jetzt die Nadel aufsetzen."); }
   catch (e) { flash($("rec-msg"), e.message, false); }
   poll();
-});
+}
+$("rec-album-btn").addEventListener("click", () => startRecording("album"));
+$("rec-all-btn").addEventListener("click", () => startRecording("all"));
 twoStep($("rec-stop"), "Wirklich beenden?", async () => {
   try { await post("/api/core/action/record_stop"); flash($("rec-msg"), "Aufnahme beendet. Die letzten Dateien werden noch umgewandelt."); }
   catch (e) { flash($("rec-msg"), e.message, false); }

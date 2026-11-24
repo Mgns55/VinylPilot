@@ -72,24 +72,32 @@
 <section class="tab hidden" id="tab-record">
   <article class="panel">
     <div class="panel-head"><h2>Platte auf die Synology digitalisieren</h2></div>
-    <p class="muted">Jedes Lied wird als eigene Datei gespeichert, getrennt an den Pausen. Mit eingeschalteter
-      Titelerkennung werden die Dateien nach Interpret und Titel benannt und getaggt.</p>
+    <p class="muted">Jedes Lied wird eine eigene Datei, abgelegt als <code>Interpret/Album/Nr - Titel.flac</code>.
+      Lieder, die schon digitalisiert sind, werden automatisch übersprungen.</p>
     <dl class="kv">
       <dt>Ziel</dt><dd id="rec-target">–</dd>
       <dt>Status</dt><dd id="rec-state">–</dd>
+      <dt>Modus</dt><dd id="rec-mode">–</dd>
+      <dt>Album</dt><dd id="rec-album">–</dd>
       <dt>Laufzeit</dt><dd id="rec-elapsed">–</dd>
       <dt>Aktuelles Lied</dt><dd id="rec-track">–</dd>
       <dt>Titelerkennung</dt><dd id="rec-recognize">–</dd>
     </dl>
     <div class="row">
-      <button class="primary" id="rec-start">Aufnahme starten</button>
+      <button class="primary" id="rec-album-btn" title="Hält nach dem Album automatisch an">Nächstes Album aufzeichnen</button>
+      <button class="ghost" id="rec-all-btn" title="Läuft, bis du sie beendest oder 30 min keine Musik kommt">Alle Alben aufzeichnen</button>
       <button class="danger hidden" id="rec-stop">Aufnahme beenden</button>
       <span class="msg" id="rec-msg"></span>
     </div>
+    <p class="muted small" id="rec-hint"></p>
   </article>
   <article class="panel">
     <div class="panel-head"><h2>Gespeichert</h2></div>
     <ul class="files" id="rec-files"><li class="muted">Noch nichts aufgenommen.</li></ul>
+    <div id="rec-skipped-wrap" class="hidden">
+      <div class="panel-head" style="margin-top:16px"><h2>Übersprungen (schon vorhanden)</h2></div>
+      <ul class="files" id="rec-skipped"></ul>
+    </div>
   </article>
 </section>
 

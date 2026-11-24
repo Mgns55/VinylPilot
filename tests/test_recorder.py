@@ -46,3 +46,56 @@ async def test_refuses_without_mounted_share(tmp_path):
         assert "not_mounted" in str(err)
     else:
         raise AssertionError("expected RuntimeError")
+
+
+def _meta(title, album="Mezzanine", artist="Massive Attack"):
+    return {"title": title, "artist": artist, "album": album, "sampled_from": time.time()}
+
+
+def _play(rec, n=15, db=-30.0):
+    for _ in range(n):
+        rec.feed(CHUNK, db, True)
+
+
+async def _settle(rec):
+    for _ in range(100):
+        await asyncio.sleep(0.05)
+        if not rec._jobs:
+            return
+
+
+async def test_next_album_mode_stops_at_new_album_and_skips_duplicates(tmp_path, monkeypatch):
+    # an earlier session already digitised "Teardrop" (folder name with a remaster note)
+    old = tmp_path / "Massive Attack" / "Mezzanine (Remastered)"
+    old.mkdir(parents=True)
+    (old / "01 - Teardrop.flac").write_bytes(b"x")
+
+    rec = Recorder(tmp_path, 48000, 0.02, gap_db=-55, gap_min_s=0.1, min_track_s=0.2, fmt="wav",
+                   min_keep_s=0.1)
+    monkeypatch.setattr(rec, "target_ready", lambda: (True, "ready"))
+    rec.start("album")
+    _play(rec)
+    rec.set_track_meta(_meta("Teardrop"))            # duplicate -> skipped
+    _play(rec, 10, -70.0)
+    _play(rec)
+    rec.set_track_meta(_meta("Inertia Creeps"))      # new -> kept, same folder, number 02
+    _play(rec, 10, -70.0)
+    _play(rec)
+    rec.set_track_meta(_meta("Paranoid Android", album="OK Computer", artist="Radiohead"))
+    assert not rec.active and rec.stop_reason == "album_done"
+    await _settle(rec)
+    files = sorted(str(p.relative_to(tmp_path)) for p in tmp_path.rglob("*.*") if ".vinylpilot-tmp" not in str(p))
+    assert files == ["Massive Attack/Mezzanine (Remastered)/01 - Teardrop.flac",
+                     "Massive Attack/Mezzanine (Remastered)/02 - Inertia Creeps.wav"], files
+    assert rec.skipped == ["Massive Attack/Mezzanine (Remastered)/01 - Teardrop.flac"]
+
+
+async def test_album_mode_ends_after_long_silence(tmp_path, monkeypatch):
+    rec = Recorder(tmp_path, 48000, 0.02, min_keep_s=0.1, fmt="wav", album_end_silence_s=0.2)
+    monkeypatch.setattr(rec, "target_ready", lambda: (True, "ready"))
+    rec.start("album")
+    _play(rec)
+    for _ in range(15):
+        rec.feed(CHUNK, -90.0, False)
+    assert not rec.active and rec.stop_reason == "album_done"
+    await _settle(rec)

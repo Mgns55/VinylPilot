@@ -27,6 +27,14 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
+def _norm(text: str) -> str:
+    """Comparable album/artist name: case, brackets, remaster notes and punctuation ignored."""
+    plain = re.sub(r"[^a-z0-9äöüß]+", "", text.lower())
+    text = re.sub(r"[\(\[].*?[\)\]]", " ", text.lower())
+    text = re.sub(r"\b(remaster(ed)?|deluxe|edition|version|expanded|anniversary|\d{4})\b", " ", text)
+    return re.sub(r"[^a-z0-9äöüß]+", "", text) or plain  # e.g. an album called "1989"
+
+
 def _safe(text: str) -> str:
     text = re.sub(r'[\\/:*?"<>|\x00-\x1f]', "", text).strip().strip(".")
     return text[:120] or "Unknown"
@@ -39,6 +47,7 @@ class Track:
     started: float
     frames: int = 0
     meta: dict[str, Any] = field(default_factory=dict)
+    discard: bool = False
 
 
 class _WavWriter(threading.Thread):
@@ -86,6 +95,7 @@ class Recorder:
         gap_min_s: float = 1.5,
         min_track_s: float = 30.0,
         auto_stop_silence_s: float = 1800.0,
+        album_end_silence_s: float = 300.0,
         fmt: str = "flac",
         min_keep_s: float = 5.0,
     ) -> None:
@@ -97,6 +107,12 @@ class Recorder:
         self.gap_min_s = gap_min_s
         self.min_track_s = min_track_s
         self.auto_stop_silence_s = auto_stop_silence_s
+        self.album_end_silence_s = album_end_silence_s
+        self.mode = "all"
+        self.target_album: tuple[str, str] | None = None
+        self.target_album_name: str | None = None
+        self.skipped: list[str] = []
+        self.stop_reason: str | None = None
         self.fmt = fmt
         self.session_dir: Path | None = None
         self.session_name: str | None = None
@@ -129,9 +145,12 @@ class Recorder:
             return False, "read_only"
         return True, "ready"
 
-    def start(self) -> None:
+    def start(self, mode: str = "all") -> None:
+        """mode 'album': stop after the next album; 'all': keep going until stopped."""
         if self.active:
             return
+        if mode not in ("album", "all"):
+            raise ValueError("mode must be 'album' or 'all'")
         ok, reason = self.target_ready()
         if not ok:
             raise RuntimeError(f"recording target {self.base_dir}: {reason}")
@@ -142,12 +161,20 @@ class Recorder:
         self.started = time.time()
         self._count = 0
         self.finished = []
+        self.skipped = []
         self.error = None
-        logger.info("Recording started: %s", self.session_dir)
+        self.mode = mode
+        self.target_album = None
+        self.target_album_name = None
+        self.stop_reason = None
+        self._silent_s = 0.0
+        logger.info("Recording started (%s): %s", "next album" if mode == "album" else "all albums",
+                    self.session_name)
 
-    def stop(self) -> None:
+    def stop(self, reason: str = "manual") -> None:
         if not self.active:
             return
+        self.stop_reason = reason
         self._close_track()
         logger.info("Recording stopped: %s", self.session_name)
         tmp = self.session_dir
@@ -163,8 +190,22 @@ class Recorder:
         if self.track is None or not meta or not meta.get("title"):
             return
         # Only if the analysed audio belongs to this track (not to the previous one).
-        if meta.get("sampled_from", 0) >= self.track.started - 1:
-            self.track.meta = dict(meta)
+        if meta.get("sampled_from", 0) < self.track.started - 1:
+            return
+        self.track.meta = dict(meta)
+        if self.mode != "album" or not meta.get("album"):
+            return
+        key = (_norm(meta.get("artist", "")), _norm(meta["album"]))
+        if self.target_album is None:
+            self.target_album = key
+            self.target_album_name = f"{meta.get('artist', '')} – {meta['album']}"
+            logger.info("Recording album: %s", self.target_album_name)
+        elif key != self.target_album:
+            # The next record has started: this track belongs to it, so drop it and stop.
+            logger.info("Next album detected (%s – %s); recording finished",
+                        meta.get("artist"), meta["album"])
+            self.track.discard = True
+            self.stop("album_done")
 
     # ---- audio path ----------------------------------------------------------
 
@@ -175,9 +216,12 @@ class Recorder:
             if self.track is not None:
                 self._close_track()  # side finished or needle lifted
             self._silent_s += self.chunk_s
-            if self._silent_s >= self.auto_stop_silence_s:
+            if self.mode == "album" and self._count and self._silent_s >= self.album_end_silence_s:
+                logger.info("Album finished (%d min without music)", self.album_end_silence_s // 60)
+                self.stop("album_done")
+            elif self._silent_s >= self.auto_stop_silence_s:
                 logger.info("Recording stopped after %d min without music", self.auto_stop_silence_s // 60)
-                self.stop()
+                self.stop("silence")
             return
         self._silent_s = 0.0
         if self.track is None:
@@ -215,7 +259,7 @@ class Recorder:
             logger.warning("Track %d: %d chunks dropped (network share too slow)", track.number, writer.dropped)
         if writer.error:
             self.error = writer.error
-        if track.frames / self.rate < self.min_keep_s:
+        if track.discard or track.frames / self.rate < self.min_keep_s:
             job = asyncio.get_running_loop().create_task(self._discard(track, writer))
         else:
             job = asyncio.get_running_loop().create_task(self._finalise(track, writer))
@@ -230,10 +274,31 @@ class Recorder:
             pass
 
     def _album_dir(self, meta: dict[str, Any]) -> Path:
-        """Artist/Album for recognised records, else Unbekannt/<session>."""
-        if meta.get("artist") and meta.get("album"):
-            return self.base_dir / _safe(meta["artist"]) / _safe(meta["album"])
-        return self.base_dir / "Unbekannt" / (self.session_name or "Vinyl")
+        """Artist/Album for recognised records, else Unbekannt/<session>.
+
+        An existing folder whose name matches after normalisation is reused, so
+        'Aftermath (Remastered)' and 'Aftermath' end up in the same place.
+        """
+        if not (meta.get("artist") and meta.get("album")):
+            return self.base_dir / "Unbekannt" / (self.session_name or "Vinyl")
+        artist_dir = self.base_dir / _safe(meta["artist"])
+        if artist_dir.is_dir():
+            for d in artist_dir.iterdir():
+                if d.is_dir() and _norm(d.name) == _norm(meta["album"]):
+                    return d
+        return artist_dir / _safe(meta["album"])
+
+    @staticmethod
+    def _already_recorded(album_dir: Path, title: str) -> Path | None:
+        """A file of this album with the same title, from this or an earlier session."""
+        if not album_dir.is_dir():
+            return None
+        want = _norm(title)
+        for f in album_dir.iterdir():
+            m = re.match(r"\d+ - (.+)\.(flac|wav)$", f.name)
+            if m and _norm(m.group(1)) == want:
+                return f
+        return None
 
     def _next_number(self, album_dir: Path) -> int:
         """Continue numbering across sides and across sessions for the same album."""
@@ -277,10 +342,18 @@ class Recorder:
     async def _finalise_locked(self, track: Track, writer: _WavWriter) -> None:
         await asyncio.to_thread(writer.join, 30)
         meta = track.meta
-        album_dir = self._album_dir(meta)
+        album_dir = await asyncio.to_thread(self._album_dir, meta)
+        title = meta.get("title")
+        if title:
+            existing = await asyncio.to_thread(self._already_recorded, album_dir, title)
+            if existing is not None:
+                await asyncio.to_thread(track.path.unlink, True)
+                rel = str(existing.relative_to(self.base_dir))
+                self.skipped.append(rel)
+                logger.info("Skipped, already digitised: %s", rel)
+                return
         await asyncio.to_thread(album_dir.mkdir, parents=True, exist_ok=True)
         number = self._next_number(album_dir)
-        title = meta.get("title")
         stem = f"{number:02d} - {_safe(title)}" if title else f"{number:02d} - Track {number:02d}"
         cover = await self._fetch_cover(meta.get("cover", ""), album_dir) if title else None
         if self.fmt == "flac" and shutil.which("flac"):
@@ -331,5 +404,9 @@ class Recorder:
             "track": self.track.number if self.track else None,
             "track_title": (self.track.meta.get("title") if self.track else None),
             "finished": self.finished[-20:],
+            "skipped": self.skipped[-20:],
+            "mode": self.mode,
+            "album": self.target_album_name,
+            "stop_reason": self.stop_reason,
             "error": self.error,
         }

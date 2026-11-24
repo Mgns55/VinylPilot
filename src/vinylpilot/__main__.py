@@ -132,8 +132,8 @@ async def run(args: argparse.Namespace) -> None:
         status.changed.set()
         return {}
 
-    def start_recording(_data: dict) -> dict:
-        recorder.start()
+    def start_recording(data: dict) -> dict:
+        recorder.start(str(data.get("mode", "all")))
         return {"recording": recorder.status()}
 
     def stop_recording(_data: dict) -> dict:
