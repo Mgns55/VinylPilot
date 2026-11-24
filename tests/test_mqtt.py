@@ -14,3 +14,11 @@ def test_discovery_entities_are_unique_and_complete():
     for required in ("turntable_connected", "record_playing", "streaming", "cpu",
                      "temperature", "wifi_rssi", "level_left", "level_right", "version"):
         assert required in keys
+
+
+def test_cover_never_empty():
+    from vinylpilot.mqtt import COVER_PLACEHOLDER
+    pub = MqttPublisher(MqttSettings(host="x"), Status(), name="VinylPilot",
+                        on_threshold=lambda v: None, on_hold=lambda v: None)
+    cover = next(cfg for comp, key, cfg in pub._entities() if key == "cover")
+    assert COVER_PLACEHOLDER in cover["url_template"]

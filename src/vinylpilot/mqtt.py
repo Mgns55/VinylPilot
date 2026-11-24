@@ -51,6 +51,12 @@ class MqttSettings:
     system_interval_s: float = 30.0
 
 
+# Shown as cover when nothing is recognised; an empty URL makes Home Assistant log image errors.
+COVER_PLACEHOLDER = (
+    "https://raw.githubusercontent.com/Mgns55/VinylPilot/main/assets/brand/png/icon-square-dark-512.png"
+)
+
+
 def _slug(text: str) -> str:
     return re.sub(r"[^a-z0-9_]+", "_", text.lower()).strip("_") or "vinylpilot"
 
@@ -120,7 +126,7 @@ class MqttPublisher:
                 "json_attributes_topic": f"{self.base}/now_playing", "icon": "mdi:album"}),
             ("image", "cover", {
                 "name": "Cover", "url_topic": f"{self.base}/now_playing",
-                "url_template": "{{ value_json.cover }}"}),
+                "url_template": "{{ value_json.cover if value_json.cover else '" + COVER_PLACEHOLDER + "' }}"}),
             ("number", "threshold", {
                 "name": "Detection threshold", "state_topic": st,
                 "value_template": "{{ value_json.threshold_db }}",
@@ -184,7 +190,8 @@ class MqttPublisher:
                 last_track = self.status.now_playing
                 await client.publish(f"{self.base}/now_playing",
                                      json.dumps(last_track or {"title": "", "artist": "", "album": "",
-                                                               "cover": "", "url": ""}), retain=True)
+                                                               "cover": COVER_PLACEHOLDER, "url": ""}),
+                                     retain=True)
             if now >= next_levels:
                 await client.publish(f"{self.base}/levels", json.dumps({
                     "level_left": round(self.status.level_left, 1),
