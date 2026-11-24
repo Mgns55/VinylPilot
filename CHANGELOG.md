@@ -12,6 +12,8 @@ All notable changes to this project are documented here. Format: [Keep a Changel
   turntable is off; capture finds the USB device on its own
 
 ### Added
+- Update countdown in the web interface: estimate from the previous update's duration (75 s default),
+  progress bar, 'takes longer' state, automatic page reload when the new version is up
 - Digitising: one folder per album (`Artist/Album`), continuous numbering, embedded cover + cover.jpg,
   year and genre tags
 - Web: logo groove turns at 33⅓ rpm while a record plays; spinning record as empty cover

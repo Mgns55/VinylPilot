@@ -30,6 +30,7 @@ logger = logging.getLogger("vinylpilot.web")
 
 INSTALL_DIR = Path(os.environ.get("VINYLPILOT_INSTALL_DIR", "/opt/vinylpilot"))
 UPDATE_UNIT = "vinylpilot-update.service"
+DEFAULT_UPDATE_S = 75  # typical on a Pi Zero 2 W without dependency changes
 STATIC = resources.files("vinylpilot") / "web_static"
 
 
@@ -189,9 +190,27 @@ class WebApp:
             self._update_cache = (time.time(), info)
         _, state = await _run("systemctl", "is-active", UPDATE_UNIT)
         info["running"] = state.strip() in ("active", "activating")
+        info["estimate_s"] = await self._last_update_duration() or DEFAULT_UPDATE_S
         _, log = await _run("journalctl", "-u", UPDATE_UNIT, "-n", "30", "--no-pager", "-o", "cat")
         info["log"] = log.strip().splitlines()[-30:]
         return web.json_response(info)
+
+    async def _last_update_duration(self) -> int | None:
+        """Duration of the previous update run, used as the next countdown."""
+        code, out = await _run("systemctl", "show", UPDATE_UNIT, "-p",
+                               "ExecMainStartTimestampMonotonic,ExecMainExitTimestampMonotonic")
+        if code != 0:
+            return None
+        vals = dict(line.split("=", 1) for line in out.strip().splitlines() if "=" in line)
+        try:
+            start = int(vals.get("ExecMainStartTimestampMonotonic", "0"))
+            end = int(vals.get("ExecMainExitTimestampMonotonic", "0"))
+        except ValueError:
+            return None
+        if start and end > start:
+            # + time for the services to come back after the installer exits
+            return min(900, max(30, round((end - start) / 1e6) + 15))
+        return None
 
     async def _update_start(self, _req: web.Request) -> web.Response:
         # Allowed for the vinylpilot user by a polkit rule for exactly this unit.

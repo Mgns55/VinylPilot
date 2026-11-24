@@ -282,6 +282,9 @@ $("logs-load").addEventListener("click", loadLogs);
 
 // ---------- update ----------
 let updatePoll = null;
+let updateRun = null; // {start, estimate, sawRunning, timer}
+const mmss = (s) => `${s < 0 ? "+" : ""}${Math.floor(Math.abs(s) / 60)}:${String(Math.abs(Math.round(s)) % 60).padStart(2, "0")}`;
+
 async function loadUpdate(refresh = false) {
   try {
     const u = await api(`/api/update${refresh ? "?refresh=1" : ""}`);
@@ -289,20 +292,60 @@ async function loadUpdate(refresh = false) {
     $("up-latest").innerHTML = !u.check_ok ? `<span class="badtxt">GitHub nicht erreichbar</span>`
       : u.update_available ? `<span class="good">${esc(u.latest)} verfügbar</span>` : "aktuell";
     $("update-badge").classList.toggle("hidden", !u.update_available);
-    $("up-run").disabled = u.running;
+    $("up-run").disabled = u.running || !!updateRun;
     $("up-log").textContent = u.log.join("\n");
-    if (u.running) { $("up-msg").textContent = "Update läuft …"; clearTimeout(updatePoll); updatePoll = setTimeout(() => loadUpdate(), 3000); }
+    if (updateRun) {
+      if (u.running) updateRun.sawRunning = true;
+      else if (updateRun.sawRunning || Date.now() - updateRun.start > 8000) return finishUpdate(true);
+      clearTimeout(updatePoll); updatePoll = setTimeout(() => loadUpdate(), 2000);
+    } else if (u.running) {
+      startCountdown(u.estimate_s); // e.g. page reloaded while an update runs
+    }
     return u;
   } catch (e) {
-    // the web service restarts during an update: keep trying
-    $("up-msg").textContent = "Dienst startet neu …";
-    clearTimeout(updatePoll); updatePoll = setTimeout(() => loadUpdate(true), 4000);
+    // the web service itself restarts near the end of an update: keep trying
+    if (updateRun) { updateRun.restarting = true; $("up-phase").textContent = "Dienste starten neu …"; }
+    else $("up-msg").textContent = "Dienst nicht erreichbar …";
+    clearTimeout(updatePoll); updatePoll = setTimeout(() => loadUpdate(true), 2000);
   }
 }
+
+function startCountdown(estimate) {
+  if (updateRun) return;
+  updateRun = { start: Date.now(), estimate: estimate || 75, sawRunning: false };
+  $("up-progress").classList.remove("hidden");
+  $("up-run").disabled = true;
+  $("up-msg").textContent = "";
+  const tick = () => {
+    const elapsed = (Date.now() - updateRun.start) / 1000, left = updateRun.estimate - elapsed;
+    $("up-remaining").textContent = left > 0 ? mmss(left) : "gleich";
+    $("up-bar").style.width = `${Math.min(97, elapsed / updateRun.estimate * 100)}%`;
+    if (!updateRun.restarting) {
+      $("up-phase").textContent = left > 0 ? "Update läuft: neue Version laden und installieren"
+        : "dauert etwas länger als üblich (z. B. neue Bibliotheken)";
+    }
+  };
+  tick();
+  updateRun.timer = setInterval(tick, 1000);
+}
+
+function finishUpdate(ok) {
+  clearInterval(updateRun?.timer);
+  updateRun = null;
+  $("up-bar").style.width = "100%";
+  $("up-remaining").textContent = ok ? "Fertig" : "Fehler";
+  $("up-phase").textContent = ok ? "Seite lädt neu …" : "Bitte das Protokoll prüfen";
+  if (ok) setTimeout(() => location.reload(), 2500);
+}
+
 $("up-check").addEventListener("click", async () => { $("up-msg").textContent = "Suche …"; await loadUpdate(true); $("up-msg").textContent = ""; });
 twoStep($("up-run"), "Wirklich aktualisieren?", async () => {
-  try { await post("/api/update"); $("up-msg").textContent = "Update gestartet …"; setTimeout(() => loadUpdate(), 1500); }
-  catch (e) { flash($("up-msg"), e.message, false); }
+  try {
+    const info = await api("/api/update");
+    await post("/api/update");
+    startCountdown(info.estimate_s);
+    clearTimeout(updatePoll); updatePoll = setTimeout(() => loadUpdate(), 2000);
+  } catch (e) { flash($("up-msg"), e.message, false); }
 });
 
 // ---------- start ----------

@@ -159,3 +159,10 @@ body.playing .logo .vp-play { animation: vp-pulse 1.8s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) {
   .logo .vp-arc, body.playing .logo .vp-play, .cover.spin { animation: none; }
 }
+
+/* update countdown */
+.countdown { margin-top: 18px; padding: 16px 18px; border: 1px solid rgba(167,123,77,.35); border-radius: 8px; background: var(--panel-2); }
+.cd-time { display: flex; align-items: baseline; gap: 14px; }
+#up-remaining { font-size: 34px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.cd-label { color: var(--muted); }
+.countdown .progress div { transition: width 1s linear; }
