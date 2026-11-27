@@ -293,6 +293,8 @@ async function loadDiagnostics() {
       ["MQTT", s.mqtt.enabled ? yes(s.mqtt.connected) : "nicht eingerichtet"],
       ["WLAN-Wächter", d.network.netwatch.length ? d.network.netwatch.map(esc).join("<br>") : "keine Eingriffe"],
     ]);
+    $("netfail-panel").hidden = !(d.netfail && d.netfail.length);
+    if (d.netfail && d.netfail.length) $("netfail").textContent = d.netfail.join("\n");
   } catch (e) { $("diag-net").textContent = e.message; }
   loadLogs();
 }

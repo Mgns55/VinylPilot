@@ -40,3 +40,24 @@ def test_reset_forces_absent():
     assert d.reset() and not d.present
     assert not d.reset()
     assert d.update(-40, 0.02) and d.present  # a fresh edge after the device returns
+
+
+def test_gap_tracker_finds_pauses_above_fixed_floor():
+    from vinylpilot.levels import GapTracker
+    g = GapTracker(0.02, floor_db=-55.0, drop_db=20.0, min_s=1.5)
+    ended = [g.update(-30.0) for _ in range(1000)]       # 20 s music around -30 dBFS
+    assert not any(ended)
+    assert [g.update(-52.0) for _ in range(100)] == [False] * 100   # 2 s groove noise at -52
+    assert g.update(-30.0) is True                       # counted as a gap (threshold -50)
+    assert [g.update(-45.0) for _ in range(40)] == [False] * 40     # quiet bar, not 20 dB down
+    assert g.update(-30.0) is False
+
+
+def test_gap_tracker_ignores_short_dips():
+    from vinylpilot.levels import GapTracker
+    g = GapTracker(0.02, min_s=1.5)
+    for _ in range(500):
+        g.update(-30.0)
+    for _ in range(50):                                  # 1 s only
+        g.update(-70.0)
+    assert g.update(-30.0) is False

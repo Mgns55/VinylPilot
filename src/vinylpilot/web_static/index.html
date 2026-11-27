@@ -151,6 +151,11 @@
     <article class="panel"><div class="panel-head"><h2>Aufnahmegeräte (ALSA)</h2></div><ul class="list" id="diag-alsa"></ul></article>
   </div>
   <article class="panel"><div class="panel-head"><h2>Netzwerk &amp; Dienste</h2></div><dl class="kv" id="diag-net"></dl></article>
+  <article class="panel" id="netfail-panel" hidden>
+    <div class="panel-head"><h2>Letzte WLAN-Ausfälle</h2></div>
+    <p class="muted small">Momentaufnahmen des WLAN-Wächters, auch über Neustarts hinweg gespeichert.</p>
+    <pre class="log" id="netfail">–</pre>
+  </article>
   <article class="panel">
     <div class="panel-head"><h2>Protokoll</h2><button class="ghost" id="logs-load">Aktualisieren</button></div>
     <pre class="log" id="logs">–</pre>

@@ -95,3 +95,45 @@ class SignalDetector:
                 self.present = False
                 return True
         return False
+
+
+class GapTracker:
+    """Finds the pauses between tracks, relative to the music's own loudness.
+
+    A fixed threshold fails on real vinyl: the run-in groove between tracks carries
+    surface noise that can sit above -55 dBFS. So a pause is a stretch either below
+    ``floor_db`` or at least ``drop_db`` below the running music level, whichever
+    threshold is higher. ``update`` returns True once, when music resumes after a
+    pause of at least ``min_s``.
+    """
+
+    def __init__(self, chunk_s: float, floor_db: float = -55.0, drop_db: float = 20.0,
+                 min_s: float = 1.5, tau_s: float = 20.0) -> None:
+        self.chunk_s = chunk_s
+        self.floor_db = floor_db
+        self.drop_db = drop_db
+        self.min_s = min_s
+        self._alpha = min(1.0, chunk_s / tau_s)
+        self.music_db: float | None = None
+        self.quiet_s = 0.0
+
+    @property
+    def threshold_db(self) -> float:
+        if self.music_db is None:
+            return self.floor_db
+        return max(self.floor_db, self.music_db - self.drop_db)
+
+    def reset(self) -> None:
+        self.music_db = None
+        self.quiet_s = 0.0
+
+    def update(self, window_db: float) -> bool:
+        if window_db < self.threshold_db:
+            self.quiet_s += self.chunk_s
+            return False
+        # music: follow its level slowly (pauses never pull it down)
+        self.music_db = window_db if self.music_db is None else (
+            self.music_db + self._alpha * (window_db - self.music_db))
+        ended = self.quiet_s >= self.min_s - _EPS
+        self.quiet_s = 0.0
+        return ended

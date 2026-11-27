@@ -4,6 +4,15 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 
 ## [Unreleased]
 
+## [0.2.3] – 2026-11-27
+### Fixed
+- Track splitting on real vinyl: pauses are now detected relative to the music's own level (20 dB below it, or below the gap threshold, whichever is higher). With the fixed −55 dBFS threshold the surface noise between tracks was too loud, so whole sides ended up in one file.
+- Tracks interrupted by a crash or power cut are recovered on the next start into `Unbekannt/Wiederhergestellt <date>` (title kept, marked "unvollständig"); orphaned temp folders are cleaned up.
+- WAV files are written without a header update per chunk (less SMB traffic over Wi-Fi).
+
+### Added
+- The Wi-Fi watchdog stores a snapshot (throttling/undervoltage flags, Wi-Fi driver messages, memory) in `/var/lib/vinylpilot/netfail.log` before each action, so the cause survives the reboot. Shown under Diagnose → "Letzte WLAN-Ausfälle".
+
 ## [0.2.2] – 2026-11-24
 ### Changed
 - FLAC files are encoded in the hidden temp folder and moved into the album folder in one step, so Navidrome and other library scanners never pick up half-written files.

@@ -48,6 +48,13 @@ def _git(*args: str) -> tuple[str, ...]:
     return ("git", "-c", f"safe.directory={INSTALL_DIR}", "-C", str(INSTALL_DIR), *args)
 
 
+def _tail(path: Path, lines: int) -> list[str]:
+    try:
+        return path.read_text(errors="replace").splitlines()[-lines:]
+    except OSError:
+        return []
+
+
 class WebApp:
     def __init__(self, core_url: str, password: str | None) -> None:
         self.core_url = core_url
@@ -159,6 +166,7 @@ class WebApp:
                 ln for ln in netwatch.strip().splitlines()
                 if ln and not ln.startswith("--") and "No journal" not in ln][-5:]},
             "hostname": os.uname().nodename,
+            "netfail": _tail(Path("/var/lib/vinylpilot/netfail.log"), 60),
         })
 
     async def _logs(self, req: web.Request) -> web.Response:

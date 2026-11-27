@@ -18,6 +18,8 @@ from collections import deque
 from collections.abc import Callable
 from typing import Any
 
+from .levels import GapTracker
+
 logger = logging.getLogger(__name__)
 
 
@@ -45,21 +47,27 @@ class TrackRecognizer:
         self.on_result = on_result
         self.sample_s = sample_s
         self.start_delay_s = start_delay_s
-        self.gap_db = gap_db
-        self.gap_min_s = gap_min_s
+        self._gaps = GapTracker(chunk_s, floor_db=gap_db, min_s=gap_min_s)
         self.recheck_s = recheck_s
         self.retry_s = retry_s
         self.max_retries = max_retries
         self.timeout_s = timeout_s
         self._buf: deque[bytes] = deque(maxlen=int(sample_s / chunk_s) + 1)
         self._playing = False
-        self._quiet_s = 0.0
         self._due: float | None = None
         self._last_lookup = 0.0
         self._misses = 0
         self._task: asyncio.Task[None] | None = None
         self._proc: asyncio.subprocess.Process | None = None
         self.current: dict[str, Any] | None = None
+
+    @property
+    def gap_db(self) -> float:
+        return self._gaps.floor_db
+
+    @gap_db.setter
+    def gap_db(self, value: float) -> None:
+        self._gaps.floor_db = value
 
     # ---- called for every chunk -------------------------------------------
 
@@ -70,6 +78,7 @@ class TrackRecognizer:
                 self._playing = False
                 self._due = None
                 self._buf.clear()
+                self._gaps.reset()
                 if self.current is not None:
                     self.current = None
                     self.on_result(None)
@@ -81,13 +90,9 @@ class TrackRecognizer:
         self._buf.append(pcm)
 
         # gap between tracks: quiet for a moment, then music again
-        if window_db < self.gap_db:
-            self._quiet_s += self.chunk_s
-        else:
-            if self._quiet_s >= self.gap_min_s:
-                self._misses = 0
-                self._schedule(now + self.start_delay_s, "gap detected")
-            self._quiet_s = 0.0
+        if self._gaps.update(window_db):
+            self._misses = 0
+            self._schedule(now + self.start_delay_s, "gap detected")
 
         if self._due is None and now - self._last_lookup >= self.recheck_s:
             self._schedule(now, "periodic re-check")

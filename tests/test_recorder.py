@@ -139,3 +139,34 @@ async def test_flac_appears_atomically_with_tags(tmp_path, monkeypatch):
         tags = subprocess.run(["metaflac", "--export-tags-to=-", str(out)],
                               capture_output=True, text=True).stdout
         assert "ARTIST=Unbekannt" in tags and f"ALBUM={out.parent.name}" in tags
+
+
+async def test_recovers_tracks_left_by_a_crash(tmp_path, monkeypatch):
+    import json
+    import wave as _wave
+    orphan = tmp_path / ".vinylpilot-tmp" / "Vinyl 2026-11-26 21-26"
+    orphan.mkdir(parents=True)
+    wav = orphan / "01 - recording.wav"
+    with _wave.open(str(wav), "wb") as w:   # header written, then the power goes
+        w.setnchannels(2); w.setsampwidth(2); w.setframerate(1000)
+        w.writeframesraw(b"\x01\x00" * 2 * 1000 * 40)  # 40 s at 1 kHz
+        w._file.flush()
+        hdr = wav.read_bytes()
+        w._datawritten = w._datalength  # suppress the header patch on close
+    wav.write_bytes(hdr[:40] + b"\x00\x00\x00\x00" + hdr[44:])  # data size 0, as after a crash
+    (orphan / "01 - recording.json").write_text(json.dumps({"title": "Dark Place", "artist": "Miu", "album": "Watercolours"}))
+    (orphan / "02 - recording.wav").write_bytes(hdr[:44] + b"\x00" * 400)  # too short: dropped
+
+    rec = Recorder(tmp_path, 1000, 0.02, fmt="wav")
+    monkeypatch.setattr(rec, "target_ready", lambda: (True, "ready"))
+    rec.start()
+    for _ in range(100):
+        await asyncio.sleep(0.05)
+        if not orphan.exists():
+            break
+    files = [str(p.relative_to(tmp_path)) for p in tmp_path.rglob("*.wav") if ".vinylpilot-tmp" not in str(p)]
+    assert files == ["Unbekannt/Wiederhergestellt 2026-11-26/01 - Dark Place (unvollständig).wav"], files
+    with _wave.open(str(tmp_path / files[0])) as w:
+        assert w.getnframes() == 40000
+    assert not orphan.exists()
+    rec.stop()
