@@ -43,7 +43,7 @@ class ArecordCapture:
             "-r", str(self.sample_rate),
             "-c", "2",
             "-t", "raw",
-            "-B", "200000",  # 200 ms ALSA buffer
+            "-B", "500000",  # 500 ms ALSA buffer: rides out short scheduling hiccups
             "-F", "20000",  # 20 ms periods
         ]
 

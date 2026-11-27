@@ -4,6 +4,15 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 
 ## [Unreleased]
 
+## [0.2.5] – 2026-11-27
+### Fixed
+- Short dropouts on the speakers: stream timestamps now follow the audio clock (sample count) instead of the moment a chunk was processed, so any processing delay no longer produces overlapping or compressed timestamps at the receiver.
+- Streaming runs in its own task behind a 2 s queue; a stalled Wi-Fi send no longer blocks capture, detection or recording.
+- ALSA capture buffer raised from 200 to 500 ms.
+
+### Added
+- Network send stalls and audio-loop delays are logged and counted (Diagnose → "Stream-Hänger").
+
 ## [0.2.4] – 2026-11-27
 ### Fixed
 - Tracks are also split when Shazam recognises a new song but no pause was found (segued albums, short or noisy gaps). The cut is placed at the quietest moment between the last sample of the old song and the first sample of the new one.

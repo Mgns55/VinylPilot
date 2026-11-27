@@ -141,6 +141,8 @@ async def run(args: argparse.Namespace) -> None:
 
     auto_state = {"warned": False}
 
+    stalls = {"count": 0, "dropped": 0, "last_log": 0.0}  # network send stalls (see sender)
+
     def ensure_auto_recording(force_log: bool = False) -> None:
         """Keep the permanent recording armed (also after restarts and NAS outages)."""
         if not cfg.auto_record or recorder.active:
@@ -185,6 +187,7 @@ async def run(args: argparse.Namespace) -> None:
             "settings": cfg.to_dict(),
             "stylus": {"hours": round(stylus.hours, 2), "life_h": cfg.stylus_life_h, "since": stylus.since},
             "recording": recorder.status(),
+            "stream": {"stalls": stalls["count"], "dropped": stalls["dropped"]},
             "system": {
                 "cpu": cpu.percent(), "memory": system.memory_used_percent(),
                 "process_memory": system.process_rss_mb(), "temperature": system.cpu_temperature(),
@@ -228,9 +231,56 @@ async def run(args: argparse.Namespace) -> None:
     last_report = 0.0
     last_auto_check = 0.0
     loop = asyncio.get_running_loop()
+
+    # Streaming runs in its own task behind a small queue: a Wi-Fi hiccup that delays a
+    # send must never stall capture (arecord would overrun), detection or recording.
+    send_q: asyncio.Queue[tuple[bytes, int | None]] = asyncio.Queue(maxsize=100)  # 2 s
+
+    async def sender() -> None:
+        while True:
+            pcm, ts = await send_q.get()
+            t0 = loop.time()
+            try:
+                await source.feed(pcm, ts)
+            except Exception:  # noqa: BLE001 - capture and detection keep running
+                logger.exception("Unexpected error while streaming; continuing")
+            took = loop.time() - t0
+            if took > 0.15:
+                stalls["count"] += 1
+                if loop.time() - stalls["last_log"] > 10:
+                    stalls["last_log"] = loop.time()
+                    logger.warning("Network send stalled for %d ms (Wi-Fi?) – %d stalls so far",
+                                   took * 1000, stalls["count"])
+
+    sender_task = loop.create_task(sender())
+
+    # Timestamps follow the audio clock (sample count), not the time a chunk happened to be
+    # processed: after any delay the receiver still gets a gap-free, evenly spaced stream.
+    clock = {"anchor": None, "samples": 0}
+
+    def capture_ts() -> int | None:
+        now_us = source.now_us()
+        if now_us is None:
+            return None
+        est = now_us - chunk_us  # first sample of this chunk was captured about one chunk ago
+        if clock["anchor"] is None:
+            clock["anchor"], clock["samples"] = est, 0
+        ts = clock["anchor"] + clock["samples"] * 1_000_000 // args.rate
+        if abs(ts - est) > 600_000:  # real interruption (overrun, device restart): re-anchor
+            clock["anchor"], clock["samples"] = est, 0
+            ts = est
+        clock["samples"] += capture.chunk_frames
+        return ts
+
+    last_chunk = loop.time()
     try:
         async for pcm in capture.chunks():
+            gap = loop.time() - last_chunk
+            last_chunk = loop.time()
+            if pcm and gap > 0.25 and capture.running:
+                logger.warning("Audio loop delayed by %d ms", gap * 1000)
             if not pcm:
+                clock["anchor"] = None
                 # Turntable vanished (USB unplugged, powered down): that is "no record playing".
                 if detector.reset():
                     logger.info("Record stopped (input lost)")
@@ -243,17 +293,15 @@ async def run(args: argparse.Namespace) -> None:
                 continue
             if not status.turntable_name:
                 status.turntable_name = _card_name(capture.device)
-            now_us = source.now_us()
-            # The chunk's first sample was captured roughly one chunk ago.
-            ts = now_us - chunk_us if now_us is not None else None
+            ts = capture_ts()
             levels = meter.process(pcm)
             if detector.update(meter.window_rms_db, capture.chunk_s):
                 logger.info("Record %s", "playing" if detector.present else "stopped")
                 await source.set_signal(detector.present)
-            try:
-                await source.feed(pcm, ts)
-            except Exception:  # noqa: BLE001 - capture and detection keep running
-                logger.exception("Unexpected error while streaming; continuing")
+            if send_q.full():
+                send_q.get_nowait()  # network stuck for 2 s: drop the oldest chunk
+                stalls["dropped"] += 1
+            send_q.put_nowait((pcm, ts))
             if detector.present:
                 stylus.add(capture.chunk_s)
             if cfg.recognize:
@@ -278,6 +326,7 @@ async def run(args: argparse.Namespace) -> None:
         stylus.save()
         recorder.stop()
         recognizer.close()
+        sender_task.cancel()
         for task in tasks:
             task.cancel()
         try:

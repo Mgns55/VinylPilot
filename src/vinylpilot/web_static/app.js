@@ -291,6 +291,7 @@ async function loadDiagnostics() {
       ["Router", d.network.gateway ? `${esc(d.network.gateway)} · ${yes(d.network.gateway_reachable, "erreichbar", "nicht erreichbar")}` : yes(false, "", "kein Netz")],
       ["Music Assistant", yes(s.music_assistant)],
       ["MQTT", s.mqtt.enabled ? yes(s.mqtt.connected) : "nicht eingerichtet"],
+      ["Stream-Hänger", s.stream ? (s.stream.stalls ? `${s.stream.stalls} seit Start` + (s.stream.dropped ? ` · ${s.stream.dropped} Pakete verworfen` : "") : "keine") : "–"],
       ["WLAN-Wächter", d.network.netwatch.length ? d.network.netwatch.map(esc).join("<br>") : "keine Eingriffe"],
     ]);
     $("netfail-panel").hidden = !(d.netfail && d.netfail.length);
