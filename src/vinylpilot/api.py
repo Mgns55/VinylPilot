@@ -1,6 +1,6 @@
 """Core control API on 127.0.0.1, used by the separate web interface process.
 
-Live levels/waveform are only computed and sent while a client is subscribed.
+Live levels are only sent while a client is subscribed.
 """
 
 from __future__ import annotations
@@ -21,26 +21,19 @@ FRAME_INTERVAL_S = 1 / 15
 
 
 class LiveLevels:
-    """Collects per-chunk min/max (mono) and peaks for subscribed clients."""
+    """Latest levels for subscribed clients (the level meters in the web interface)."""
 
     def __init__(self) -> None:
         self.subscribers = 0
-        self.wave: list[tuple[float, float]] = []
         self.rms = (-120.0, -120.0)
         self.peak = (-120.0, -120.0)
 
     def feed(self, pcm: bytes, rms: tuple[float, float], peak: tuple[float, float]) -> None:
-        if not self.subscribers:
-            return
-        import numpy as np  # core only; keeps the web process free of numpy
-
-        mono = np.frombuffer(pcm, dtype="<i2").reshape(-1, 2).mean(axis=1) / 32768.0
-        self.wave.append((round(float(mono.min()), 3), round(float(mono.max()), 3)))
-        self.rms, self.peak = rms, peak
+        if self.subscribers:
+            self.rms, self.peak = rms, peak
 
     def take_frame(self) -> dict[str, Any]:
-        wave, self.wave = self.wave, []
-        return {"rms": [round(v, 1) for v in self.rms], "peak": [round(v, 1) for v in self.peak], "wave": wave}
+        return {"rms": [round(v, 1) for v in self.rms], "peak": [round(v, 1) for v in self.peak]}
 
 
 class CoreApi:
@@ -106,8 +99,6 @@ class CoreApi:
             pass
         finally:
             self.live.subscribers -= 1
-            if not self.live.subscribers:
-                self.live.wave = []
         return ws
 
     @staticmethod

@@ -4,6 +4,10 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 
 ## [Unreleased]
 
+## [0.3.1] – 2026-11-27
+### Changed
+- Web interface: the input display shows just the two level bars (with peak marker); the waveform, dB values and scale are gone. The core no longer computes waveform data.
+
 ## [0.3.0] – 2026-11-27
 ### Changed – digitising rebuilt for the Zero's Wi-Fi
 - The recorder runs in its own process (nice 10). Nothing it does - share hiccups, encoding, tagging - can stall the live stream; if it cannot keep up, recording audio is dropped (counted), never streaming audio.

@@ -180,24 +180,6 @@ function setVu(rms, peak) {
     const el = $(`vu-${c}`);
     el.querySelector(".fill").style.width = `${pct(rms[i])}%`;
     if (peak) el.querySelector(".peak").style.left = `calc(${pct(peak[i])}% - 2px)`;
-    el.querySelector(".val").textContent = rms[i] <= -119 ? "–∞" : rms[i].toFixed(1);
-  });
-}
-const waveBuf = [];
-const WAVE_POINTS = 300; // 6 s at 50 chunks/s
-function drawWave() {
-  const c = $("wave"), dpr = window.devicePixelRatio || 1;
-  const w = c.clientWidth, h = c.clientHeight;
-  if (c.width !== w * dpr) { c.width = w * dpr; c.height = h * dpr; }
-  const g = c.getContext("2d");
-  g.setTransform(dpr, 0, 0, dpr, 0, 0);
-  g.clearRect(0, 0, w, h);
-  g.strokeStyle = "rgba(247,244,240,.08)"; g.beginPath(); g.moveTo(0, h / 2); g.lineTo(w, h / 2); g.stroke();
-  const step = w / WAVE_POINTS, off = WAVE_POINTS - waveBuf.length;
-  g.fillStyle = "#A77B4D";
-  waveBuf.forEach(([mn, mx], i) => {
-    const y1 = h / 2 - mx * h / 2, y2 = h / 2 - mn * h / 2;
-    g.fillRect((off + i) * step, y1, Math.max(1, step - .5), Math.max(1, y2 - y1));
   });
 }
 function syncLive() {
@@ -207,9 +189,6 @@ function syncLive() {
     ws.onmessage = (ev) => {
       const f = JSON.parse(ev.data);
       setVu(f.rms, f.peak);
-      waveBuf.push(...f.wave);
-      if (waveBuf.length > WAVE_POINTS) waveBuf.splice(0, waveBuf.length - WAVE_POINTS);
-      drawWave();
     };
     ws.onclose = () => { ws = null; setTimeout(syncLive, 3000); };
   } else if (!want && ws) {
