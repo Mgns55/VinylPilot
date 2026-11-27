@@ -4,6 +4,16 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 
 ## [Unreleased]
 
+## [0.2.6] – 2026-11-27
+### Fixed
+- ~1 s dropouts every 90 s: each Shazam lookup started a new Python process, and that burst stalled the audio loop for up to a second (logged as "Audio loop delayed by 948 ms"; no network stalls). The recognition worker now starts once per record and stays running, at nice 19 and idle I/O priority.
+- arecord's output pipe is enlarged to 1 MiB (~5 s), so a busy moment can no longer make capture overrun and lose samples.
+- Stream timestamps are only re-aligned when the audio clock and the wall clock stay apart for 2 s (real sample loss or drift), not while a short backlog is worked off - the 0.2.5 re-anchoring itself caused an audible jump.
+- No more bogus "Audio loop delayed by 4261331 ms" after waiting for the turntable.
+
+### Added
+- "Slow audio step" warning when processing a single chunk takes over 100 ms.
+
 ## [0.2.5] – 2026-11-27
 ### Fixed
 - Short dropouts on the speakers: stream timestamps now follow the audio clock (sample count) instead of the moment a chunk was processed, so any processing delay no longer produces overlapping or compressed timestamps at the receiver.

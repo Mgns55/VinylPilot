@@ -10,6 +10,7 @@ import logging
 import os
 import signal
 import time
+from collections import deque
 from pathlib import Path
 
 from aiosendspin.models.types import AudioCodec
@@ -258,6 +259,10 @@ async def run(args: argparse.Namespace) -> None:
     # processed: after any delay the receiver still gets a gap-free, evenly spaced stream.
     clock = {"anchor": None, "samples": 0}
 
+    # Re-anchor only when the audio clock and the wall clock stay apart for 2 s (samples
+    # really lost, or clock drift) - not while a short backlog is being worked off.
+    offsets: deque[int] = deque(maxlen=100)
+
     def capture_ts() -> int | None:
         now_us = source.now_us()
         if now_us is None:
@@ -265,10 +270,17 @@ async def run(args: argparse.Namespace) -> None:
         est = now_us - chunk_us  # first sample of this chunk was captured about one chunk ago
         if clock["anchor"] is None:
             clock["anchor"], clock["samples"] = est, 0
+            offsets.clear()
         ts = clock["anchor"] + clock["samples"] * 1_000_000 // args.rate
-        if abs(ts - est) > 600_000:  # real interruption (overrun, device restart): re-anchor
-            clock["anchor"], clock["samples"] = est, 0
-            ts = est
+        offsets.append(est - ts)
+        if len(offsets) == offsets.maxlen:
+            lo, hi = min(offsets), max(offsets)
+            shift = lo if lo > 150_000 else hi if hi < -150_000 else 0
+            if shift:
+                logger.info("Stream clock re-aligned by %d ms", shift // 1000)
+                clock["anchor"] += shift
+                ts += shift
+                offsets.clear()
         clock["samples"] += capture.chunk_frames
         return ts
 
@@ -277,7 +289,7 @@ async def run(args: argparse.Namespace) -> None:
         async for pcm in capture.chunks():
             gap = loop.time() - last_chunk
             last_chunk = loop.time()
-            if pcm and gap > 0.25 and capture.running:
+            if pcm and gap > 0.25 and clock["anchor"] is not None:
                 logger.warning("Audio loop delayed by %d ms", gap * 1000)
             if not pcm:
                 clock["anchor"] = None
@@ -293,6 +305,7 @@ async def run(args: argparse.Namespace) -> None:
                 continue
             if not status.turntable_name:
                 status.turntable_name = _card_name(capture.device)
+            t_iter = loop.time()
             ts = capture_ts()
             levels = meter.process(pcm)
             if detector.update(meter.window_rms_db, capture.chunk_s):
@@ -309,6 +322,8 @@ async def run(args: argparse.Namespace) -> None:
             recorder.feed(pcm, meter.window_rms_db, detector.present)
             live.feed(pcm, (levels.rms_left, levels.rms_right), (levels.peak_left, levels.peak_right))
             _update_status(status, capture, source, detector, levels)
+            if loop.time() - t_iter > 0.1:
+                logger.warning("Slow audio step: %d ms", (loop.time() - t_iter) * 1000)
             if cfg.auto_record and not recorder.active and loop.time() - last_auto_check >= 30:
                 last_auto_check = loop.time()
                 ensure_auto_recording()

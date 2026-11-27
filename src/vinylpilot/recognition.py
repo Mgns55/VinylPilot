@@ -11,6 +11,7 @@ import asyncio
 import io
 import json
 import logging
+import shutil
 import sys
 import time
 import wave
@@ -40,8 +41,9 @@ class TrackRecognizer:
         timeout_s: float = 45.0,
         worker_cmd: list[str] | None = None,
     ) -> None:
+        low_io = ["ionice", "-c", "3"] if shutil.which("ionice") else []
         self.worker_cmd = worker_cmd or [
-            "nice", "-n", "10", sys.executable, "-m", "vinylpilot.recognize_worker"]
+            "nice", "-n", "19", *low_io, sys.executable, "-m", "vinylpilot.recognize_worker", "--serve"]
         self.rate = sample_rate
         self.chunk_s = chunk_s
         self.on_result = on_result
@@ -78,6 +80,7 @@ class TrackRecognizer:
                 self._playing = False
                 self._due = None
                 self._buf.clear()
+                self._stop_worker()
                 self._gaps.reset()
                 if self.current is not None:
                     self.current = None
@@ -126,6 +129,7 @@ class TrackRecognizer:
 
     def reset(self) -> None:
         """Forget the current track (e.g. recognition switched off)."""
+        self._stop_worker()
         self._playing = False
         self._due = None
         self._buf.clear()
@@ -133,27 +137,44 @@ class TrackRecognizer:
             self.current = None
             self.on_result(None)
 
-    async def _lookup(self, wav: bytes, sampled_from: float) -> None:
-        try:
-            proc = await asyncio.create_subprocess_exec(
+    async def _worker(self) -> asyncio.subprocess.Process:
+        if self._proc is None or self._proc.returncode is not None:
+            self._proc = await asyncio.create_subprocess_exec(
                 *self.worker_cmd,
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.DEVNULL,
             )
-            self._proc = proc
-            out, err = await asyncio.wait_for(proc.communicate(wav), timeout=self.timeout_s)
+        return self._proc
+
+    def _stop_worker(self) -> None:
+        if self._proc is not None and self._proc.returncode is None:
+            try:
+                self._proc.kill()
+            except ProcessLookupError:
+                pass
+        self._proc = None
+
+    async def _lookup(self, wav: bytes, sampled_from: float) -> None:
+        try:
+            proc = await self._worker()
+            assert proc.stdin is not None and proc.stdout is not None
+            proc.stdin.write(len(wav).to_bytes(4, "big") + wav)
+            await proc.stdin.drain()
+            line = await asyncio.wait_for(proc.stdout.readline(), timeout=self.timeout_s)
         except TimeoutError:
             logger.warning("Track recognition timed out")
-            proc.kill()
+            self._stop_worker()
             return
         except Exception as e:  # noqa: BLE001
             logger.warning("Track recognition could not run: %s", e)
+            self._stop_worker()
             return
         try:
-            result = json.loads(out.decode().strip().splitlines()[-1])
-        except (ValueError, IndexError):
-            logger.warning("Track recognition failed: %s", err.decode(errors="replace").strip()[-300:])
+            result = json.loads(line.decode().strip())
+        except ValueError:
+            logger.warning("Track recognition failed (worker exited)")
+            self._stop_worker()
             return
         if not self._playing:
             return
@@ -178,8 +199,7 @@ class TrackRecognizer:
 
     def close(self) -> None:
         """Stop any running lookup (used on shutdown)."""
-        if self._proc is not None and self._proc.returncode is None:
-            self._proc.kill()
+        self._stop_worker()
         if self._task is not None:
             self._task.cancel()
 

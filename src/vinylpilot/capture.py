@@ -11,6 +11,21 @@ logger = logging.getLogger(__name__)
 BYTES_PER_FRAME = 4  # S16_LE stereo
 
 
+F_SETPIPE_SZ = 1031
+
+
+def _grow_pipe(proc: asyncio.subprocess.Process) -> None:
+    """Enlarge arecord's output pipe to 1 MiB (~5 s of audio), so a busy moment in
+    our process never makes arecord overrun and lose samples."""
+    try:
+        import fcntl
+
+        pipe = proc._transport.get_pipe_transport(1).get_extra_info("pipe")  # type: ignore[attr-defined]
+        fcntl.fcntl(pipe.fileno(), F_SETPIPE_SZ, 1 << 20)
+    except (AttributeError, OSError) as err:
+        logger.debug("Could not enlarge capture pipe: %s", err)
+
+
 class ArecordCapture:
     """Reads raw S16_LE stereo PCM from an ALSA device, restarting arecord on failure.
 
@@ -72,6 +87,7 @@ class ArecordCapture:
                 stderr=asyncio.subprocess.PIPE,
             )
             assert proc.stdout is not None
+            _grow_pipe(proc)
             try:
                 while True:
                     chunk = await proc.stdout.readexactly(self.chunk_bytes)

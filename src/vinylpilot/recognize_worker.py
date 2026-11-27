@@ -1,7 +1,10 @@
-"""One-shot Shazam lookup: reads a WAV from stdin, prints one JSON line.
+"""Shazam lookups in a separate, low-priority process.
 
-Runs as a short-lived subprocess so the recognition library (~30 MB) is only in
-memory during a lookup and can never stall the audio loop.
+``--serve``: stays running while a record plays; reads WAVs framed as a 4-byte
+big-endian length plus data from stdin and prints one JSON line per lookup. Starting
+Python and importing the library once per record instead of once per lookup keeps
+the CPU/SD-card burst away from the audio loop.
+Without arguments: one-shot (WAV on stdin, one JSON line).
 
 Uses the unofficial, reverse-engineered Shazam API via ``shazamio`` (MIT).
 It may stop working at any time and is not endorsed by Shazam/Apple.
@@ -39,16 +42,25 @@ def _extract(answer: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+async def _lookup(shazam: Any, data: bytes) -> dict[str, Any]:
+    try:
+        return _extract(await shazam.recognize(data))
+    except Exception as err:  # noqa: BLE001
+        return {"error": f"{type(err).__name__}: {err}"}
+
+
 async def _main() -> int:
     from shazamio import Shazam  # imported here: only this process pays for it
 
-    data = sys.stdin.buffer.read()
-    try:
-        answer = await Shazam().recognize(data)
-    except Exception as err:  # noqa: BLE001
-        print(json.dumps({"error": f"{type(err).__name__}: {err}"}))
-        return 1
-    print(json.dumps(_extract(answer)))
+    shazam = Shazam()
+    if "--serve" not in sys.argv:
+        result = await _lookup(shazam, sys.stdin.buffer.read())
+        print(json.dumps(result))
+        return 1 if "error" in result else 0
+    stdin = sys.stdin.buffer
+    while len(header := stdin.read(4)) == 4:
+        data = stdin.read(int.from_bytes(header, "big"))
+        print(json.dumps(await _lookup(shazam, data)), flush=True)
     return 0
 
 

@@ -26,8 +26,9 @@ async def test_lookup_after_start_and_gap(tmp_path):
     worker = tmp_path / "worker.py"
     worker.write_text(
         "import sys, json\n"
-        "sys.stdin.buffer.read()\n"
-        f"print(json.dumps({json.dumps(_extract(SHAZAM_ANSWER))}))\n"
+        "while len(h := sys.stdin.buffer.read(4)) == 4:\n"
+        "    sys.stdin.buffer.read(int.from_bytes(h, 'big'))\n"
+        f"    print(json.dumps({json.dumps(_extract(SHAZAM_ANSWER))}), flush=True)\n"
     )
     results = []
     rec = TrackRecognizer(48000, 0.02, results.append, sample_s=0.2, start_delay_s=0.1,
