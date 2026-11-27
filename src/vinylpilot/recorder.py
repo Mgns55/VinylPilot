@@ -124,6 +124,7 @@ class _WavWriter(threading.Thread):
         self.rate = rate
         self.error: str | None = None
         self.dropped = 0
+        self._closing = False
 
     def run(self) -> None:
         try:
@@ -131,7 +132,15 @@ class _WavWriter(threading.Thread):
                 w.setnchannels(2)
                 w.setsampwidth(2)
                 w.setframerate(self.rate)
-                while (chunk := self.q.get()) is not None:
+                while True:
+                    try:
+                        chunk = self.q.get(timeout=0.5)
+                    except queue.Empty:
+                        if self._closing:
+                            break
+                        continue
+                    if chunk is None:
+                        break
                     w.writeframesraw(chunk)  # header is fixed up once, on close
         except OSError as err:
             self.error = str(err)
@@ -144,8 +153,10 @@ class _WavWriter(threading.Thread):
             self.dropped += 1
 
     def finish(self) -> None:
+        """Never blocks the audio loop: the thread drains the queue and then stops."""
+        self._closing = True
         try:
-            self.q.put(None, timeout=5)
+            self.q.put_nowait(None)
         except queue.Full:
             pass
 
@@ -477,7 +488,7 @@ class Recorder:
                 logger.info("Skipped, already digitised: %s", rel)
                 return
         await asyncio.to_thread(album_dir.mkdir, parents=True, exist_ok=True)
-        number = self._next_number(album_dir)
+        number = await asyncio.to_thread(self._next_number, album_dir)
         stem = f"{number:02d} - {_safe(title)}" if title else f"{number:02d} - Track {number:02d}"
         cover = await self._fetch_cover(meta.get("cover", ""), album_dir) if title else None
         if self.fmt == "flac" and shutil.which("flac"):

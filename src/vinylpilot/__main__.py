@@ -10,7 +10,6 @@ import logging
 import os
 import signal
 import time
-from collections import deque
 from pathlib import Path
 
 from aiosendspin.models.types import AudioCodec
@@ -259,10 +258,6 @@ async def run(args: argparse.Namespace) -> None:
     # processed: after any delay the receiver still gets a gap-free, evenly spaced stream.
     clock = {"anchor": None, "samples": 0}
 
-    # Re-anchor only when the audio clock and the wall clock stay apart for 2 s (samples
-    # really lost, or clock drift) - not while a short backlog is being worked off.
-    offsets: deque[int] = deque(maxlen=100)
-
     def capture_ts() -> int | None:
         now_us = source.now_us()
         if now_us is None:
@@ -270,17 +265,13 @@ async def run(args: argparse.Namespace) -> None:
         est = now_us - chunk_us  # first sample of this chunk was captured about one chunk ago
         if clock["anchor"] is None:
             clock["anchor"], clock["samples"] = est, 0
-            offsets.clear()
         ts = clock["anchor"] + clock["samples"] * 1_000_000 // args.rate
-        offsets.append(est - ts)
-        if len(offsets) == offsets.maxlen:
-            lo, hi = min(offsets), max(offsets)
-            shift = lo if lo > 150_000 else hi if hi < -150_000 else 0
-            if shift:
-                logger.info("Stream clock re-aligned by %d ms", shift // 1000)
-                clock["anchor"] += shift
-                ts += shift
-                offsets.clear()
+        # Only a gross mismatch (clock jump, capture restarted unnoticed) re-anchors; every
+        # re-anchor is an audible jump, so short delays are deliberately left alone.
+        if abs(est - ts) > 10_000_000:
+            logger.info("Stream clock re-aligned by %d ms", (est - ts) // 1000)
+            clock["anchor"], clock["samples"] = est, 0
+            ts = est
         clock["samples"] += capture.chunk_frames
         return ts
 

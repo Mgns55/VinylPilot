@@ -4,6 +4,12 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 
 ## [Unreleased]
 
+## [0.2.7] – 2026-11-27
+### Fixed
+- Removed the stream-clock re-alignment for short delays: every re-alignment was an audible jump (logs showed several per minute). Timestamps now follow the audio clock strictly; only a jump of more than 10 s re-anchors.
+- Closing a recorded track no longer blocks the audio loop for up to 5 s when the network share is slow (source of the "Audio loop delayed by 3991 ms").
+- Track numbering on the share is looked up off the audio loop.
+
 ## [0.2.6] – 2026-11-27
 ### Fixed
 - ~1 s dropouts every 90 s: each Shazam lookup started a new Python process, and that burst stalled the audio loop for up to a second (logged as "Audio loop delayed by 948 ms"; no network stalls). The recognition worker now starts once per record and stays running, at nice 19 and idle I/O priority.
