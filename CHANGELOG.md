@@ -4,6 +4,14 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 
 ## [Unreleased]
 
+## [0.3.0] – 2026-11-27
+### Changed – digitising rebuilt for the Zero's Wi-Fi
+- The recorder runs in its own process (nice 10). Nothing it does - share hiccups, encoding, tagging - can stall the live stream; if it cannot keep up, recording audio is dropped (counted), never streaming audio.
+- Tracks are encoded to FLAC **while they play** and written straight to the share at a steady ~0.9 Mbit/s. No WAV files, no copying, splitting or re-encoding afterwards; finishing a track writes tags into the FLAC padding and renames it on the share.
+- The last 150 s of audio stay in RAM (~29 MB) before they are written, so Shazam-driven cuts are made in memory.
+- The live stream to Music Assistant uses FLAC by default (~40 % less Wi-Fi traffic); automatic fallback to PCM.
+- systemd: `KillMode=mixed`, `TimeoutStopSec=25`, so the recorder can finish the current track on restart.
+
 ## [0.2.7] – 2026-11-27
 ### Fixed
 - Removed the stream-clock re-alignment for short delays: every re-alignment was an audible jump (logs showed several per minute). Timestamps now follow the audio clock strictly; only a jump of more than 10 s re-anchors.

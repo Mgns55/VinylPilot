@@ -18,8 +18,10 @@ StateDirectory=vinylpilot
 StateDirectoryMode=0700
 Restart=always
 RestartSec=5
-# VinylPilot stops within a few seconds; never wait 90 s
-TimeoutStopSec=15
+# Stop signal goes to the main process only; it lets the recorder process finish the
+# current track (<= 10 s) before everything is stopped. Never wait 90 s.
+KillMode=mixed
+TimeoutStopSec=25
 # Audio first: slightly higher CPU and I/O priority than normal processes
 Nice=-5
 # Hardening

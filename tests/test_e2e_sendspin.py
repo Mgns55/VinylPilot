@@ -35,7 +35,10 @@ def _chunk(n: int, frames: int = 960) -> bytes:
     return bytes(out)
 
 
-async def test_source_pairs_streams_and_reports_signal(tmp_path):
+@pytest.mark.parametrize("codec", ["pcm", "flac"])
+async def test_source_pairs_streams_and_reports_signal(tmp_path, codec):
+    from aiosendspin.models.types import AudioCodec
+
     server_store = InMemoryServerPairingStore()
     server = SendspinServer(
         loop=asyncio.get_running_loop(),
@@ -56,7 +59,8 @@ async def test_source_pairs_streams_and_reports_signal(tmp_path):
     await ts.start_server()
     url = f"ws://127.0.0.1:{ts.port}{SendspinServer.API_PATH}"
 
-    source = SendspinSource(name="VinylPilot", state_dir=tmp_path, sample_rate=48000, server_url=url)
+    source = SendspinSource(name="VinylPilot", state_dir=tmp_path, sample_rate=48000, server_url=url,
+                            codec=AudioCodec(codec))
     events: list[Any] = []
     try:
         await source.start()

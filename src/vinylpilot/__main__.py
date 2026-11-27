@@ -23,7 +23,7 @@ from .api import API_PORT, CoreApi, LiveLevels
 from .levels import LevelMeter, SignalDetector
 from .mqtt import MqttPublisher, MqttSettings, Status
 from .recognition import TrackRecognizer
-from .recorder import Recorder
+from .record_worker import RecorderClient
 from .settings import RECORDINGS_DIR
 from .stylus import StylusCounter
 from .sendspin_source import LISTEN_PORT, SendspinSource
@@ -43,7 +43,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(prog="vinylpilot", description="USB turntable → Music Assistant")
     p.add_argument("--device", default="auto", help="ALSA capture device, e.g. hw:CARD=PSHX500,DEV=0 (default: auto)")
     p.add_argument("--rate", type=int, default=48000, help="sample rate in Hz (default: 48000)")
-    p.add_argument("--codec", choices=["pcm", "flac"], default="pcm", help="stream codec (default: pcm)")
+    p.add_argument("--codec", choices=["pcm", "flac"], default="flac",
+                   help="stream codec (default: flac, ~40%% less Wi-Fi traffic; falls back to pcm "
+                        "if Music Assistant does not accept it)")
     p.add_argument("--name", default="VinylPilot", help="name shown in Music Assistant")
     p.add_argument("--server-url", help="connect to this server instead of waiting for discovery, e.g. ws://192.168.1.10:8927/sendspin")
     p.add_argument("--port", type=int, default=LISTEN_PORT, help=f"listen port (default: {LISTEN_PORT})")
@@ -92,13 +94,15 @@ async def run(args: argparse.Namespace) -> None:
     detector = SignalDetector(cfg.threshold_db, args.activation, cfg.hold_s)
     status = Status(turntable_name="", threshold_db=cfg.threshold_db, hold_s=cfg.hold_s)
     live = LiveLevels()
-    recorder = Recorder(args.recordings_dir, args.rate, capture.chunk_s,
-                        gap_db=cfg.gap_db, fmt=cfg.recording_format)
+    # Digitising runs in its own process: nothing it does can stall the live stream.
+    recorder = RecorderClient(args.recordings_dir, args.rate, capture.chunk_s,
+                              gap_db=cfg.gap_db, fmt=cfg.recording_format)
+    await recorder.start()
     source = SendspinSource(
         name=args.name,
         state_dir=args.state_dir,
         sample_rate=args.rate,
-        codec=AudioCodec(args.codec),
+        codec=_stream_codec(args.codec),
         server_url=args.server_url,
         port=args.port,
     )
@@ -143,22 +147,28 @@ async def run(args: argparse.Namespace) -> None:
 
     stalls = {"count": 0, "dropped": 0, "last_log": 0.0}  # network send stalls (see sender)
 
-    def ensure_auto_recording(force_log: bool = False) -> None:
-        """Keep the permanent recording armed (also after restarts and NAS outages)."""
-        if not cfg.auto_record or recorder.active:
-            return
+    async def _arm_auto(force_log: bool) -> None:
         try:
-            recorder.start("all", continuous=True)
+            await recorder.start_recording("all", continuous=True)
             auto_state["warned"] = False
-        except (RuntimeError, OSError) as err:
+        except (RuntimeError, TimeoutError) as err:
             if force_log or not auto_state["warned"]:
                 logger.warning("Automatic recording waiting for the network share: %s", err)
                 auto_state["warned"] = True
+        finally:
+            auto_state["busy"] = False
 
-    def start_recording(data: dict) -> dict:
+    def ensure_auto_recording(force_log: bool = False) -> None:
+        """Keep the permanent recording armed (also after restarts and NAS outages)."""
+        if not cfg.auto_record or recorder.active or auto_state.get("busy"):
+            return
+        auto_state["busy"] = True
+        asyncio.get_running_loop().create_task(_arm_auto(force_log))
+
+    async def start_recording(data: dict) -> dict:
         if cfg.auto_record:
             raise RuntimeError("automatic recording is on")
-        recorder.start(str(data.get("mode", "all")))
+        await recorder.start_recording(str(data.get("mode", "all")))
         return {"recording": recorder.status()}
 
     def stop_recording(_data: dict) -> dict:
@@ -330,8 +340,8 @@ async def run(args: argparse.Namespace) -> None:
     finally:
         # Shut down quickly: every step is bounded so systemd never has to SIGKILL us.
         stylus.save()
-        recorder.stop()
         recognizer.close()
+        await recorder.close(timeout=10)  # finishes the current track
         sender_task.cancel()
         for task in tasks:
             task.cancel()
@@ -345,6 +355,20 @@ async def run(args: argparse.Namespace) -> None:
             except (TimeoutError, Exception) as err:  # noqa: BLE001
                 logger.warning("%s did not stop cleanly: %s", name, err or "timeout")
         logger.info("Stopped")
+
+
+def _stream_codec(name: str) -> AudioCodec:
+    if name == "flac":
+        try:
+            from aiosendspin.audio.codecs import flac_encoder_available
+
+            if flac_encoder_available():
+                return AudioCodec.FLAC
+        except ImportError:
+            pass
+        logger.warning("FLAC encoder (PyAV) not available; streaming uncompressed PCM")
+        return AudioCodec.PCM
+    return AudioCodec(name)
 
 
 def _card_name(device: str) -> str:

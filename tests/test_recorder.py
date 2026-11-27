@@ -206,3 +206,43 @@ async def test_splits_by_recognition_when_there_is_no_pause(tmp_path, monkeypatc
     assert [f.name for f in files] == ["01 - Song A.wav", "02 - Song B.wav"], files
     lengths = [_wave.open(str(f)).getnframes() / rate for f in files]
     assert 39.5 <= lengths[0] <= 41.5 and 39 <= lengths[1] <= 41.5, lengths
+
+
+@pytest.mark.skipif(not shutil.which("metaflac"), reason="flac not installed")
+async def test_live_flac_split_by_recognition_keeps_exact_lengths(tmp_path, monkeypatch):
+    rate = 48000
+    chunk = b"\x10\x00\x10\x00" * 960
+    rec = Recorder(tmp_path, rate, 0.02, min_track_s=1.0, min_keep_s=0.1, fmt="flac", delay_s=30)
+    monkeypatch.setattr(rec, "target_ready", lambda: (True, "ready"))
+    clock = [1000.0]
+    monkeypatch.setattr("vinylpilot.recorder.time.time", lambda: clock[0])
+    rec.start()
+
+    async def play(seconds, db):
+        for i in range(int(round(seconds / 0.02))):
+            rec.feed(chunk, db, True)
+            clock[0] += 0.02
+            if i % 200 == 0:
+                await asyncio.sleep(0)
+
+    await play(10, -30.0)
+    rec.set_track_meta({"title": "A", "artist": "X", "album": "Y", "sampled_from": 1000.0})
+    await play(5, -30.0)
+    await play(0.5, -44.0)      # segue: quietest point at 15 s
+    await play(10, -30.0)
+    rec.set_track_meta({"title": "B", "artist": "X", "album": "Y", "sampled_from": 1020.0})
+    await play(5, -30.0)
+    rec.feed(b"", -120.0, False)   # side ends
+    rec.stop()
+    for _ in range(200):
+        await asyncio.sleep(0.05)
+        if len(rec.finished) == 2:
+            break
+    files = sorted((tmp_path / "X" / "Y").glob("*.flac"))
+    assert [f.name for f in files] == ["01 - A.flac", "02 - B.flac"], files
+    samples = [int(subprocess.run(["metaflac", "--show-total-samples", str(f)], capture_output=True,
+                                  text=True).stdout) for f in files]
+    assert samples[0] + samples[1] == int(30.5 * rate)
+    assert abs(samples[0] / rate - 15.0) <= 0.5, samples
+    tags = subprocess.run(["metaflac", "--export-tags-to=-", str(files[1])], capture_output=True, text=True).stdout
+    assert "TITLE=B" in tags and "TRACKNUMBER=2" in tags

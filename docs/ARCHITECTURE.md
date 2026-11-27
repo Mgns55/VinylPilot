@@ -37,10 +37,13 @@ Music Assistant (MA) connects to it, pairs once, and lists it under **Live Input
 ```
 ┌──────────────────────── Raspberry Pi ────────────────────────┐
 │ vinylpilot-core.service                                      │
-│   ALSA capture (arecord) → level/RMS → signal detector       │
-│                         ↘ aiosendspin SourceCapture → MA     │
+│   ALSA capture (arecord, 1 MiB pipe) → level/RMS → detector  │
+│        ↘ send queue (own task) → aiosendspin, FLAC → MA      │
+│        ↘ Shazam worker process (nice 19, idle I/O)           │
+│        ↘ recorder process (nice 10): 150 s delay line in RAM │
+│             → live FLAC encoder → NAS temp → tag + rename    │
 │   MQTT / HA Discovery (optional)                             │
-│   local status socket (unix)                                 │
+│   local control API (127.0.0.1:8099)                         │
 │                                                              │
 │ vinylpilot-web.service  (aiohttp, vanilla HTML/CSS/JS)       │
 │   reads status socket; WebSocket telemetry only while open   │
@@ -49,8 +52,12 @@ Music Assistant (MA) connects to it, pairs once, and lists it under **Live Input
 
 - **Core and web are separate systemd units.** Restarting or closing the web UI never touches audio.
 - **Capture:** `arecord` subprocess on `hw:` device (no resampling), supervised; restarts on USB disconnect.
-- **Format:** PCM 48 kHz / 16-bit / stereo by default (~1.5 Mbit/s). FLAC optional (saves Wi-Fi, costs CPU).
-  Higher resolution optional where the device supports it.
+- **Format:** FLAC 48 kHz / 16-bit / stereo by default (~0.9 Mbit/s instead of 1.5 Mbit/s for PCM);
+  falls back to PCM automatically if the server does not accept FLAC (`--codec pcm` forces it).
+- **Timestamps** follow the audio clock (sample count), never the processing time.
+- **Digitising** runs in a separate process. Audio reaches the share once, as a steady FLAC stream;
+  tracks are cut in RAM (gap detection live, Shazam title changes within the 150 s delay line), and
+  finishing a track only writes tags into the FLAC padding and renames it - no network bursts.
 - **Signal detection:** RMS per chunk vs. configurable threshold (calibrated against the needle-up noise floor),
   configurable activation delay, and a configurable hold before reporting `absent`
   (on top of MA's fixed 60 s hold).
