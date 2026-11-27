@@ -34,7 +34,7 @@ class TrackRecognizer:
         start_delay_s: float = 14.0,
         gap_db: float = -55.0,
         gap_min_s: float = 1.0,
-        recheck_s: float = 180.0,
+        recheck_s: float = 90.0,
         retry_s: float = 30.0,
         max_retries: int = 3,
         timeout_s: float = 45.0,

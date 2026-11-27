@@ -54,6 +54,9 @@ class Track:
     frames: int = 0
     meta: dict[str, Any] = field(default_factory=dict)
     discard: bool = False
+    cut: int | None = None          # split here (frames) when finalising; the rest goes to the next track
+    prefix: Path | None = None      # audio cut off the previous track, belongs in front of this one
+    levels: list[tuple[int, float]] = field(default_factory=list)  # (frame, dBFS) every 0.5 s
 
 
 def _write_json(path: Path, data: dict[str, Any]) -> None:
@@ -76,6 +79,41 @@ def _repair_wav(path: Path, rate: int) -> int:
         f.write(header)
         f.truncate(44 + data)
     return data // 4
+
+
+def _copy_frames(src: wave.Wave_read, dst: wave.Wave_write, frames: int) -> None:
+    while frames > 0:
+        n = min(frames, 48000 * 10)
+        data = src.readframes(n)
+        if not data:
+            break
+        dst.writeframesraw(data)
+        frames -= len(data) // 4
+
+
+def _split_wav(path: Path, cut: int, tail: Path) -> None:
+    """Move everything from frame ``cut`` on into ``tail``; keep the head in ``path``."""
+    head = path.with_suffix(".head.wav")
+    with wave.open(str(path), "rb") as src:
+        params = src.getparams()
+        with wave.open(str(head), "wb") as h:
+            h.setparams(params)
+            _copy_frames(src, h, cut)
+        with wave.open(str(tail), "wb") as t:
+            t.setparams(params)
+            _copy_frames(src, t, src.getnframes() - cut)
+    os.replace(head, path)
+
+
+def _prepend_wav(prefix: Path, path: Path) -> None:
+    joined = path.with_suffix(".joined.wav")
+    with wave.open(str(prefix), "rb") as a, wave.open(str(path), "rb") as b:
+        with wave.open(str(joined), "wb") as out:
+            out.setparams(b.getparams())
+            _copy_frames(a, out, a.getnframes())
+            _copy_frames(b, out, b.getnframes())
+    os.replace(joined, path)
+    prefix.unlink(missing_ok=True)
 
 
 class _WavWriter(threading.Thread):
@@ -238,6 +276,9 @@ class Recorder:
         # Only if the analysed audio belongs to this track (not to the previous one).
         if meta.get("sampled_from", 0) < self.track.started - 1:
             return
+        old_title = self.track.meta.get("title")
+        if old_title and _norm(old_title) != _norm(meta["title"]):
+            self._split_by_recognition(meta)
         self.track.meta = dict(meta)
         # Sidecar next to the WAV, so a crash does not lose the title.
         sidecar = self.track.path.with_suffix(".json")
@@ -281,6 +322,8 @@ class Recorder:
             self._close_track()
             self._open_track()
         self._writer.put(pcm)
+        if self.track.frames % (self.rate // 2) < len(pcm) // 4:  # every 0.5 s
+            self.track.levels.append((self.track.frames, window_db))
         self.track.frames += len(pcm) // 4
 
     # ---- tracks --------------------------------------------------------------
@@ -292,6 +335,31 @@ class Recorder:
         self.track = Track(self._count, path, time.time())
         self._writer = _WavWriter(path, self.rate)
         self._writer.start()
+
+    def _split_by_recognition(self, meta: dict[str, Any]) -> None:
+        """Shazam heard a new song but no pause was found (segue, noisy groove):
+        cut at the quietest moment between the last sample of the old song and the
+        first sample of the new one."""
+        track = self.track
+        assert track is not None
+        sample_s = 12.0  # length of a recognition sample, rounded up
+        lo = int((track.meta.get("sampled_from", track.started) + sample_s - track.started) * self.rate)
+        hi = int((meta["sampled_from"] - track.started) * self.rate)
+        window = [(f, db) for f, db in track.levels if lo <= f <= hi]
+        cut = min(window, key=lambda x: x[1])[0] if window else max(lo, hi)
+        if cut < self.min_track_s * self.rate or cut >= track.frames:
+            return
+        logger.info("Split by recognition: '%s' ended at %d s", track.meta.get("title"), cut // self.rate)
+        track.cut = cut
+        tail_frames = track.frames - cut
+        tail_levels = [(f - cut, db) for f, db in track.levels if f >= cut]
+        self._close_track()
+        self._open_track()
+        assert self.track is not None
+        self.track.prefix = track.path.with_name(f"{track.number:02d} - tail.wav")
+        self.track.started = track.started + cut / self.rate
+        self.track.frames = tail_frames
+        self.track.levels = tail_levels
 
     def _close_track(self) -> None:
         track, writer = self.track, self._writer
@@ -387,6 +455,14 @@ class Recorder:
                                album_dir: Path | None = None) -> None:
         if writer is not None:
             await asyncio.to_thread(writer.join, 30)
+        try:
+            if track.prefix is not None and track.prefix.exists():
+                await asyncio.to_thread(_prepend_wav, track.prefix, track.path)
+            if track.cut is not None:
+                tail = track.path.with_name(f"{track.number:02d} - tail.wav")
+                await asyncio.to_thread(_split_wav, track.path, track.cut, tail)
+        except (OSError, wave.Error, EOFError) as err:
+            logger.warning("Could not split/join track %d: %s", track.number, err)
         meta = track.meta
         recovered = album_dir is not None
         if album_dir is None:

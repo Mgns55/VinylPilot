@@ -170,3 +170,39 @@ async def test_recovers_tracks_left_by_a_crash(tmp_path, monkeypatch):
         assert w.getnframes() == 40000
     assert not orphan.exists()
     rec.stop()
+
+
+async def test_splits_by_recognition_when_there_is_no_pause(tmp_path, monkeypatch):
+    """Segued tracks / noisy run-in groove: Shazam's title change triggers the cut."""
+    import wave as _wave
+    rate = 1000
+    chunk = b"\x10\x00\x10\x00" * 20   # 20 ms at 1 kHz
+    rec = Recorder(tmp_path, rate, 0.02, min_track_s=1.0, min_keep_s=0.1, fmt="wav")
+    monkeypatch.setattr(rec, "target_ready", lambda: (True, "ready"))
+    clock = [1000.0]
+    monkeypatch.setattr("vinylpilot.recorder.time.time", lambda: clock[0])
+    rec.start()
+
+    async def play(seconds, db):
+        for i in range(int(seconds / 0.02)):
+            rec.feed(chunk, db, True)
+            clock[0] += 0.02
+            if i % 100 == 0:
+                await asyncio.sleep(0.005)  # let the writer thread drain its queue
+
+    await play(20, -30.0)                         # song A
+    rec.set_track_meta({"title": "Song A", "artist": "X", "album": "Y", "sampled_from": 1000.0})
+    await play(20, -30.0)
+    await play(1, -45.0)                                # short, shallow dip at 40-41 s: no gap
+    await play(30, -30.0)                         # song B
+    rec.set_track_meta({"title": "Song B", "artist": "X", "album": "Y", "sampled_from": 1050.0})
+    await play(10, -30.0)
+    rec.stop()
+    for _ in range(100):
+        await asyncio.sleep(0.05)
+        if len(rec.finished) == 2:
+            break
+    files = sorted(tmp_path.rglob("X/Y/*.wav"))
+    assert [f.name for f in files] == ["01 - Song A.wav", "02 - Song B.wav"], files
+    lengths = [_wave.open(str(f)).getnframes() / rate for f in files]
+    assert 39.5 <= lengths[0] <= 41.5 and 39 <= lengths[1] <= 41.5, lengths

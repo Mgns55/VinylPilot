@@ -4,6 +4,11 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 
 ## [Unreleased]
 
+## [0.2.4] – 2026-11-27
+### Fixed
+- Tracks are also split when Shazam recognises a new song but no pause was found (segued albums, short or noisy gaps). The cut is placed at the quietest moment between the last sample of the old song and the first sample of the new one.
+- Recognition re-checks every 90 s instead of 180 s, so short songs are not missed between checks.
+
 ## [0.2.3] – 2026-11-27
 ### Fixed
 - Track splitting on real vinyl: pauses are now detected relative to the music's own level (20 dB below it, or below the gap threshold, whichever is higher). With the fixed −55 dBFS threshold the surface noise between tracks was too loud, so whole sides ended up in one file.
