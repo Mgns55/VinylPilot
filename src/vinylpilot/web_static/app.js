@@ -78,13 +78,15 @@ function startPolling() {
 function render() {
   const s = state;
   // chips
+  // [label, short label for phones, on]
   const chips = [
-    ["Plattenspieler", s.turntable.connected], ["Platte läuft", s.record_playing],
-    ["Streaming", s.streaming], ["Music Assistant", s.music_assistant],
+    ["Plattenspieler", "Spieler", s.turntable.connected], ["Platte läuft", "Platte", s.record_playing],
+    ["Streaming", "Stream", s.streaming], ["Music Assistant", "MA", s.music_assistant],
   ];
-  if (s.mqtt.enabled) chips.push(["Home Assistant", s.mqtt.connected]);
-  if (s.recording.active) chips.push(["Aufnahme", true]);
-  $("chips").innerHTML = chips.map(([t, on]) => `<span class="chip ${on ? "on" : ""}">${t}</span>`).join("");
+  if (s.mqtt.enabled) chips.push(["Home Assistant", "HA", s.mqtt.connected]);
+  if (s.recording.active) chips.push(["Aufnahme", "Rec", true]);
+  $("chips").innerHTML = chips.map(([t, short, on]) =>
+    `<span class="chip ${on ? "on" : ""}" title="${t}"><span class="long">${t}</span><span class="short">${short}</span></span>`).join("");
 
   // now playing
   const np = s.now_playing;

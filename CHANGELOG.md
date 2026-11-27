@@ -4,6 +4,10 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 
 ## [Unreleased]
 
+## [0.3.3] – 2026-11-27
+### Changed
+- Mobile layout of the web interface: larger logo; all six tabs visible as a 3 x 2 segmented control; status pills in one line with short labels (Spieler, Platte, Stream, MA, HA); record/cover centred at up to 300 px with centred track info; full-width buttons; key/value lists stacked; safe-area padding for iPhones.
+
 ## [0.3.2] – 2026-11-27
 ### Changed
 - Wi-Fi watchdog: when the Wi-Fi chip has dropped off its SDIO bus (`wlan0` gone - seen on the Zero 2 W, no driver reload can revive it), reboot after 2 minutes instead of 10.
