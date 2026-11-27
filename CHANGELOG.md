@@ -4,6 +4,11 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 
 ## [Unreleased]
 
+## [0.3.2] – 2026-11-27
+### Changed
+- Wi-Fi watchdog: when the Wi-Fi chip has dropped off its SDIO bus (`wlan0` gone - seen on the Zero 2 W, no driver reload can revive it), reboot after 2 minutes instead of 10.
+- Recorder delay line 120 s instead of 150 s (~6 MB less memory).
+
 ## [0.3.1] – 2026-11-27
 ### Changed
 - Web interface: the input display shows just the two level bars (with peak marker); the waveform, dB values and scale are gone. The core no longer computes waveform data.

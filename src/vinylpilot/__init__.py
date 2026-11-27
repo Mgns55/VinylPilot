@@ -1,3 +1,3 @@
 """VinylPilot: USB turntable streamer for Music Assistant."""
 
-__version__ = "0.3.1"
+__version__ = "0.3.2"

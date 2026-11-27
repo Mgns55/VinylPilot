@@ -6,7 +6,7 @@ live stream. Design goals for a Pi Zero 2 W on Wi-Fi:
 - **Steady, small network load.** Each track is encoded to FLAC *while it plays* and
   written straight to the share (~0.9 Mbit/s). No WAV round trips, no copying,
   splitting or re-encoding afterwards; finishing a track only adds tags and renames it.
-- **Delay line.** The last ``delay_s`` (150 s, ~29 MB) of audio stay in memory before
+- **Delay line.** The last ``delay_s`` (120 s, ~23 MB) of audio stay in memory before
   they are written. When Shazam reports a new song without a pause having been found
   (segues, noisy run-in grooves), the cut is placed at the quietest moment in that
   window by simply re-assigning buffered audio to the next track.
@@ -182,7 +182,7 @@ class Recorder:
         album_end_silence_s: float = 300.0,
         fmt: str = "flac",
         min_keep_s: float = 5.0,
-        delay_s: float = 150.0,
+        delay_s: float = 120.0,
         mount_check: bool = True,
     ) -> None:
         self.min_keep_s = min_keep_s

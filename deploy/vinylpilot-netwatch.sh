@@ -34,6 +34,18 @@ snapshot() {
 }
 case "$fails" in 1|6|10) snapshot "before action" ;; esac
 
+# The Wi-Fi chip has dropped off its SDIO bus ("mmc1: card removed", wlan0 gone): no
+# driver reload brings it back, only a reboot does. Don't wait 10 minutes for that.
+if (( fails >= 2 )) && ! ip link show wlan0 >/dev/null 2>&1 && ! ip -4 route show default | grep -q .; then
+  up=$(cut -d. -f1 /proc/uptime)
+  if (( up > 600 )); then
+    snapshot "wlan0 vanished"
+    logger -t vinylpilot-netwatch "Wi-Fi chip gone (wlan0 missing), rebooting"
+    systemctl reboot
+    exit 0
+  fi
+fi
+
 case "$fails" in
   3)
     logger -t vinylpilot-netwatch "toggling Wi-Fi"
